@@ -7,7 +7,7 @@ from tools.mlflow_tracker import experiment_tracker
 class MLOpsAgent(BaseAgent):
     name = "mlops_agent"
 
-    def run(self, state):
+    async def run(self, state):
         artifact = self.latest_artifact(state)
         execution = state.get("latest_execution")
         metrics = {
@@ -24,7 +24,7 @@ class MLOpsAgent(BaseAgent):
                 "request": state["user_request"],
                 "max_retries": state["max_retries"],
             },
-            artifacts=[artifact.filename] if artifact else [],
+            code_artifact=artifact,
         )
         event = create_event(
             event_type=EventType.MLFLOW_LOGGED,
@@ -33,7 +33,7 @@ class MLOpsAgent(BaseAgent):
         )
         return {
             "metrics": {**state["metrics"], **metrics},
-            "experiment_records": state["experiment_records"] + [record],
+            "experiment_records": [record],
             "status": WorkflowStatus.LOGGING,
-            "events": state["events"] + [event],
+            "events": [event],
         }

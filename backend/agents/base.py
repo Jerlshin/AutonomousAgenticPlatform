@@ -7,7 +7,7 @@ class BaseAgent(ABC):
     name: str
     
     @abstractmethod
-    def run(self, state: AgentState) -> Dict[str, Any]:
+    async def run(self, state: AgentState) -> Dict[str, Any]:
         pass
 
     @staticmethod

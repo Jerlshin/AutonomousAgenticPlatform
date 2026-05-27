@@ -1,3 +1,4 @@
+import re
 from agents.base import BaseAgent
 from core.models import CodeArtifact
 from core.events import create_event
@@ -8,7 +9,7 @@ from llms.providers import coder_llm
 class CodingAgent(BaseAgent):
     name = "coding_agent"
 
-    def run(self, state):
+    async def run(self, state):
         plan_text = "\n".join(
             [
                 f"- {step.description}"
@@ -39,11 +40,14 @@ class CodingAgent(BaseAgent):
         - Include a small __main__ path or direct executable logic.
         """
 
-        generated_code = coder_llm.invoke(prompt)
+        generated_code = await coder_llm.invoke(prompt)
+
+        match = re.search(r"```(?:python)?\n?(.*?)\n?```", generated_code, re.DOTALL)
+        extracted_code = match.group(1).strip() if match else generated_code.strip()
 
         artifact = CodeArtifact(
             filename="generated_script.py",
-            content=generated_code.strip(),
+            content=extracted_code,
         )
 
         event = create_event(
@@ -56,8 +60,8 @@ class CodingAgent(BaseAgent):
         )
 
         return {
-            "generated_artifacts": state["generated_artifacts"] + [artifact],
+            "generated_artifacts": [artifact],
             "iterations": state["iterations"] + 1,
             "status": WorkflowStatus.CODING,
-            "events": state["events"] + [event],
+            "events": [event],
         }

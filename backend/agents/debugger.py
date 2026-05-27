@@ -1,3 +1,4 @@
+import re
 from agents.base import BaseAgent
 from core.enums import EventType, WorkflowStatus
 from core.events import create_event
@@ -8,7 +9,7 @@ from llms.providers import debugger_llm
 class DebugAgent(BaseAgent):
     name = "debug_agent"
 
-    def run(self, state):
+    async def run(self, state):
         artifact = self.latest_artifact(state)
         execution = state.get("latest_execution")
         if artifact is None or execution is None:
@@ -19,8 +20,8 @@ class DebugAgent(BaseAgent):
             )
             return {
                 "status": WorkflowStatus.FAILED,
-                "errors": state["errors"] + ["Debugging requires an artifact and execution result."],
-                "events": state["events"] + [event],
+                "errors": ["Debugging requires an artifact and execution result."],
+                "events": [event],
             }
 
         prompt = f"""
@@ -44,7 +45,10 @@ class DebugAgent(BaseAgent):
         - No markdown.
         - No explanations.
         """
-        patched_code = debugger_llm.invoke(prompt).strip()
+        patched_code_raw = await debugger_llm.invoke(prompt)
+        match = re.search(r"```(?:python)?\n?(.*?)\n?```", patched_code_raw, re.DOTALL)
+        patched_code = match.group(1).strip() if match else patched_code_raw.strip()
+        
         patched_artifact = CodeArtifact(
             filename=artifact.filename,
             language=artifact.language,
@@ -60,8 +64,8 @@ class DebugAgent(BaseAgent):
             },
         )
         return {
-            "generated_artifacts": state["generated_artifacts"] + [patched_artifact],
-            "retry_count": state["retry_count"] + 1,
+            "generated_artifacts": [patched_artifact],
+            "retry_count": state.get("retry_count", 0) + 1,
             "status": WorkflowStatus.DEBUGGING,
-            "events": state["events"] + [event],
+            "events": [event],
         }

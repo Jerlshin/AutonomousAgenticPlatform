@@ -1,3 +1,5 @@
+import json
+import re
 from agents.base import BaseAgent
 from core.models import PlanStep
 from core.events import create_event
@@ -7,7 +9,7 @@ from llms.providers import planner_llm
 class PlannerAgent(BaseAgent):
     name = "planner_agent"
     
-    def run(self, state):
+    async def run(self, state):
         prompt = f"""
         You are the Planner Agent for an autonomous AI research and development platform.
         
@@ -18,25 +20,29 @@ class PlannerAgent(BaseAgent):
         {state['user_request']}
         
         Rules:
-        - Return one step per line.
-        - No markdown bullets.
-        - Keep each line concise and actionable.
+        - Return a JSON object with a single key "steps", which is a list of strings.
+        - Keep each step concise and actionable.
         """
         
-        response = planner_llm.invoke(prompt)
-        raw_steps = [
-            step.strip(" -0123456789.")
-            for step in response.strip().split("\n")
-            if step.strip()
-        ]
+        response = await planner_llm.invoke(prompt, json_mode=True)
+        match = re.search(r"\{.*\}", response, re.DOTALL)
+        if match:
+            response = match.group(0)
+        try:
+            parsed = json.loads(response)
+            raw_steps = parsed.get("steps", [])
+        except json.JSONDecodeError:
+            raw_steps = []
         raw_steps = raw_steps[:5] or ["Generate and validate a Python implementation for the request."]
         structured_steps = []
         
         for idx, step in enumerate(raw_steps):
+            # The LLM might return a list of strings or a list of dicts like {"step": "..."}
+            desc = step.get("step", str(step)) if isinstance(step, dict) else str(step)
             structured_steps.append(
                 PlanStep(
                     title=f"Step {idx+1}",
-                    description=step,
+                    description=desc,
                 )
             )
         
@@ -50,5 +56,5 @@ class PlannerAgent(BaseAgent):
         return {
             "current_plan": structured_steps,
             "status": WorkflowStatus.PLANNED,
-            "events": state["events"] + [event],
+            "events": [event],
         }

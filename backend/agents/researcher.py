@@ -8,8 +8,8 @@ from tools.research import research_tool
 class ResearchAgent(BaseAgent):
     name = "research_agent"
 
-    def run(self, state):
-        local_hits = research_tool.search(state["user_request"], limit=5)
+    async def run(self, state):
+        local_hits = await research_tool.search(state["user_request"], limit=5)
         plan_text = "\n".join(step.description for step in state.get("current_plan", []))
         synthesis_prompt = f"""
         You are the Research Agent for a local autonomous AI R&D platform.
@@ -28,7 +28,7 @@ class ResearchAgent(BaseAgent):
         - Return 3 to 6 concise implementation notes.
         - Mention assumptions and likely dependencies.
         """
-        synthesis = researcher_llm.invoke(synthesis_prompt)
+        synthesis = await researcher_llm.invoke(synthesis_prompt)
         context = local_hits + [synthesis]
         event = create_event(
             event_type=EventType.RESEARCH_COMPLETED,
@@ -38,5 +38,5 @@ class ResearchAgent(BaseAgent):
         return {
             "retrieved_context": context,
             "status": WorkflowStatus.RESEARCHING,
-            "events": state["events"] + [event],
+            "events": [event],
         }

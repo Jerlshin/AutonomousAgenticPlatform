@@ -1,3 +1,5 @@
+import json
+import re
 from agents.base import BaseAgent
 from core.enums import EventType, WorkflowStatus
 from core.events import create_event
@@ -8,7 +10,7 @@ from llms.providers import evaluator_llm
 class EvaluationAgent(BaseAgent):
     name = "evaluation_agent"
 
-    def run(self, state):
+    async def run(self, state):
         execution = state.get("latest_execution")
         artifact = self.latest_artifact(state)
         passed = bool(execution and execution.success)
@@ -32,9 +34,16 @@ class EvaluationAgent(BaseAgent):
             stderr:
             {execution.stderr}
 
-            Return a concise verdict in 2 to 4 sentences.
+            Return a JSON object with a single key "summary" containing your concise verdict in 2 to 4 sentences.
             """
-            llm_summary = evaluator_llm.invoke(prompt)
+            response = await evaluator_llm.invoke(prompt, json_mode=True)
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            if match:
+                response = match.group(0)
+            try:
+                llm_summary = json.loads(response).get("summary", "")
+            except json.JSONDecodeError:
+                llm_summary = response
 
         report = EvaluationReport(
             passed=passed,
@@ -55,5 +64,5 @@ class EvaluationAgent(BaseAgent):
             "evaluation": report,
             "metrics": {**state["metrics"], "evaluation_score": report.score},
             "status": WorkflowStatus.COMPLETED if report.passed else WorkflowStatus.FAILED,
-            "events": state["events"] + [event],
+            "events": [event],
         }

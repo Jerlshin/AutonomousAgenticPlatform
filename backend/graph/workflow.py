@@ -19,26 +19,26 @@ evaluation_agent = EvaluationAgent()
 
 workflow = StateGraph(AgentState)
 
-def planner_node(state: AgentState):
-    return planner_agent.run(state)
+async def planner_node(state: AgentState):
+    return await planner_agent.run(state)
 
-def research_node(state: AgentState):
-    return research_agent.run(state)
+async def research_node(state: AgentState):
+    return await research_agent.run(state)
 
-def coding_node(state: AgentState):
-    return coder_agent.run(state)
+async def coding_node(state: AgentState):
+    return await coder_agent.run(state)
 
-def execution_node(state: AgentState):
-    return execution_agent.run(state)
+async def execution_node(state: AgentState):
+    return await execution_agent.run(state)
 
-def debug_node(state: AgentState):
-    return debug_agent.run(state)
+async def debug_node(state: AgentState):
+    return await debug_agent.run(state)
 
-def mlops_node(state: AgentState):
-    return mlops_agent.run(state)
+async def mlops_node(state: AgentState):
+    return await mlops_agent.run(state)
 
-def evaluation_node(state: AgentState):
-    return evaluation_agent.run(state)
+async def evaluation_node(state: AgentState):
+    return await evaluation_agent.run(state)
 
 def route_after_execution(state: AgentState) -> str:
     result = state.get("latest_execution")
@@ -74,5 +74,3 @@ workflow.add_conditional_edges(
 workflow.add_edge("debugger", "executor")
 workflow.add_edge("mlops", "evaluator")
 workflow.add_edge("evaluator", END)
-
-app = workflow.compile()

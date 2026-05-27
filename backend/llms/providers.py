@@ -7,12 +7,13 @@ class LocalOllamaLLM:
         self.model = model
         self.temperature = temperature
 
-    def invoke(self, prompt: str, system: str | None = None) -> str:
-        return ollama_client.generate(
+    async def invoke(self, prompt: str, system: str | None = None, json_mode: bool = False) -> str:
+        return await ollama_client.generate(
             model=self.model,
             prompt=prompt,
             temperature=self.temperature,
             system=system,
+            json_mode=json_mode,
         )
 
 

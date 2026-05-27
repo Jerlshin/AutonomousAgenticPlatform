@@ -6,3 +6,6 @@ redis
 qdrant-client
 mlflow
 psycopg2-binary
+langgraph-checkpoint-postgres
+asyncpg
+aiohttp

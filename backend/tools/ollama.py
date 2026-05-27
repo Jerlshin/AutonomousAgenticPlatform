@@ -1,3 +1,4 @@
+import asyncio
 import json
 import urllib.error
 import urllib.request
@@ -15,7 +16,7 @@ class OllamaError(RuntimeError):
 class OllamaClient:
     base_url: str = settings.ollama_base_url
 
-    def generate(self, model: str, prompt: str, temperature: float = 0.0, system: Optional[str] = None) -> str:
+    async def generate(self, model: str, prompt: str, temperature: float = 0.0, system: Optional[str] = None, json_mode: bool = False) -> str:
         payload = {
             "model": model,
             "prompt": prompt,
@@ -24,6 +25,8 @@ class OllamaClient:
         }
         if system:
             payload["system"] = system
+        if json_mode:
+            payload["format"] = "json"
 
         request = urllib.request.Request(
             f"{self.base_url.rstrip('/')}/api/generate",
@@ -33,8 +36,10 @@ class OllamaClient:
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                body = json.loads(response.read().decode("utf-8"))
+            def _fetch():
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            body = await asyncio.to_thread(_fetch)
         except urllib.error.URLError as exc:
             raise OllamaError(f"Unable to reach Ollama at {self.base_url}: {exc}") from exc
 

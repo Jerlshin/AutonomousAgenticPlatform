@@ -12,7 +12,7 @@ class Settings:
     evaluator_model: str = os.getenv("EVALUATOR_MODEL", "llama3.1:8b")
     sandbox_timeout_seconds: int = int(os.getenv("SANDBOX_TIMEOUT_SECONDS", "20"))
     use_docker_sandbox: bool = os.getenv("USE_DOCKER_SANDBOX", "false").lower() == "true"
-    sandbox_image: str = os.getenv("SANDBOX_IMAGE", "autonomous-ai-sandbox:latest")
+    sandbox_image: str = os.getenv("SANDBOX_IMAGE", "agent-sandbox-base:latest")
     max_retries: int = int(os.getenv("MAX_AGENT_RETRIES", "2"))
     local_memory_path: str = os.getenv("LOCAL_MEMORY_PATH", "docs")
     experiment_log_path: str = os.getenv("EXPERIMENT_LOG_PATH", "mlops/experiment_runs.jsonl")

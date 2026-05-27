@@ -1,42 +1,37 @@
-from pathlib import Path
-from typing import Iterable, List
-
+import os
+import aiohttp
+from typing import List
+from qdrant_client import AsyncQdrantClient
 from core.config import settings
 
+class VectorResearchTool:
+    def __init__(self):
+        self.qdrant_host = os.getenv("QDRANT_HOST", "localhost")
+        self.qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+        self.client = AsyncQdrantClient(host=self.qdrant_host, port=self.qdrant_port)
+        self.ollama_base = settings.ollama_base_url.rstrip("/")
+        
+    async def get_embedding(self, text: str) -> List[float]:
+        async with aiohttp.ClientSession() as session:
+            payload = {"model": "nomic-embed-text", "prompt": text}
+            async with session.post(f"{self.ollama_base}/api/embeddings", json=payload) as resp:
+                data = await resp.json()
+                return data.get("embedding", [])
 
-class LocalResearchTool:
-    def __init__(self, roots: Iterable[str] | None = None):
-        self.roots = [Path(root) for root in (roots or [settings.local_memory_path, "."])]
+    async def search(self, query: str, limit: int = 5) -> List[str]:
+        try:
+            embedding = await self.get_embedding(query)
+            if not embedding:
+                return ["No embedding generated."]
+            
+            # Note: collection must be created and populated elsewhere
+            results = await self.client.search(
+                collection_name="knowledge_base",
+                query_vector=embedding,
+                limit=limit
+            )
+            return [hit.payload.get("text", "") for hit in results if hit.payload]
+        except Exception as e:
+            return [f"Vector search unavailable: {e}"]
 
-    def search(self, query: str, limit: int = 5) -> List[str]:
-        terms = [term.lower() for term in query.split() if len(term) > 3]
-        matches: List[tuple[int, str]] = []
-
-        for root in self.roots:
-            if not root.exists():
-                continue
-            for path in root.rglob("*"):
-                if not path.is_file() or path.suffix.lower() not in {".md", ".txt", ".py", ".yml", ".yaml"}:
-                    continue
-                try:
-                    text = path.read_text(encoding="utf-8", errors="ignore")
-                except OSError:
-                    continue
-                score = sum(text.lower().count(term) for term in terms)
-                if score:
-                    snippet = self._snippet(text, terms)
-                    matches.append((score, f"{path}: {snippet}"))
-
-        matches.sort(key=lambda item: item[0], reverse=True)
-        return [match for _, match in matches[:limit]]
-
-    @staticmethod
-    def _snippet(text: str, terms: List[str], width: int = 420) -> str:
-        lowered = text.lower()
-        first_index = min((lowered.find(term) for term in terms if term in lowered), default=0)
-        start = max(first_index - 80, 0)
-        snippet = " ".join(text[start:start + width].split())
-        return snippet
-
-
-research_tool = LocalResearchTool()
+research_tool = VectorResearchTool()

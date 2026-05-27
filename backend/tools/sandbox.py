@@ -1,6 +1,6 @@
-import subprocess
 import tempfile
 import time
+import asyncio
 from pathlib import Path
 
 from core.config import settings
@@ -18,7 +18,7 @@ class PythonSandbox:
         self.use_docker = use_docker
         self.docker_image = docker_image
 
-    def execute(self, artifact: CodeArtifact) -> ExecutionResult:
+    async def execute(self, artifact: CodeArtifact) -> ExecutionResult:
         started = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix="agent-sandbox-") as sandbox_dir:
             script_path = Path(sandbox_dir) / artifact.filename
@@ -29,31 +29,49 @@ class PythonSandbox:
             ]
 
             try:
-                completed = subprocess.run(
-                    command,
+                process = await asyncio.create_subprocess_exec(
+                    *command,
                     cwd=sandbox_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout_seconds,
-                    check=False,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
-                elapsed = time.perf_counter() - started
-                return ExecutionResult(
-                    success=completed.returncode == 0,
-                    stdout=completed.stdout,
-                    stderr=completed.stderr,
-                    exit_code=completed.returncode,
-                    execution_time=elapsed,
-                    command=" ".join(command),
-                    artifact_id=artifact.artifact_id,
-                )
-            except subprocess.TimeoutExpired as exc:
+                
+                try:
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=self.timeout_seconds)
+                    elapsed = time.perf_counter() - started
+                    return ExecutionResult(
+                        success=process.returncode == 0,
+                        stdout=stdout_bytes.decode("utf-8") if stdout_bytes else "",
+                        stderr=stderr_bytes.decode("utf-8") if stderr_bytes else "",
+                        exit_code=process.returncode,
+                        execution_time=elapsed,
+                        command=" ".join(command),
+                        artifact_id=artifact.artifact_id,
+                    )
+                except asyncio.TimeoutError:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                    await process.communicate()
+                    elapsed = time.perf_counter() - started
+                    return ExecutionResult(
+                        success=False,
+                        stdout=None,
+                        stderr=f"Execution timed out after {self.timeout_seconds} seconds.",
+                        exit_code=124,
+                        execution_time=elapsed,
+                        command=" ".join(command),
+                        artifact_id=artifact.artifact_id,
+                    )
+
+            except Exception as exc:
                 elapsed = time.perf_counter() - started
                 return ExecutionResult(
                     success=False,
-                    stdout=exc.stdout if isinstance(exc.stdout, str) else None,
-                    stderr=f"Execution timed out after {self.timeout_seconds} seconds.",
-                    exit_code=124,
+                    stdout=None,
+                    stderr=f"Sandbox execution error: {exc}",
+                    exit_code=1,
                     execution_time=elapsed,
                     command=" ".join(command),
                     artifact_id=artifact.artifact_id,
