@@ -1,5 +1,5 @@
 """
-Data models defining the state, telemetry, and execution schemas of the multi-agent system.
+Data schema models defining the state, telemetry, and execution schemas of the multi-agent system.
 """
 
 from typing import Optional, List, Dict, Any

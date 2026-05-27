@@ -8,7 +8,7 @@ Using string enums makes the multi-agent code significantly more robust and type
 from enum import Enum
 
 # Tracks the lifecycle or current phase of an execution pipeline
-class WorflowStatus(str, Enum):
+class WorkflowStatus(str, Enum):
     INITIALIZED = "initialized"
     PLANNING = "planning"
     CODING = "coding"
