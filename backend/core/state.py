@@ -1,10 +1,12 @@
-from typing import TypedDict, List, Optional, Dict
+from typing import Any, Dict, List, Optional, TypedDict
 from core.models import (
-    PlanStep,
+    AgentEvent,
     CodeArtifact,
+    EvaluationReport,
     ExecutionLog,
     ExecutionResult,
-    AgentEvent,
+    ExperimentRecord,
+    PlanStep,
 )
 from core.enums import WorkflowStatus
 
@@ -21,7 +23,7 @@ class AgentState(TypedDict):
     
     # Runtime
     latest_execution: Optional[ExecutionResult]
-    exeution_logs: List[ExecutionLog]
+    execution_logs: List[ExecutionLog]
     
     # Cognitive memory
     retrieved_context: List[str]
@@ -33,9 +35,15 @@ class AgentState(TypedDict):
     
     # State
     status: WorkflowStatus
+    events: List[AgentEvent]
     
     # Metrics
     metrics: Dict[str, float]
+    evaluation: Optional[EvaluationReport]
+    experiment_records: List[ExperimentRecord]
+    errors: List[str]
+    max_retries: int
+    metadata: Dict[str, Any]
 
     
     

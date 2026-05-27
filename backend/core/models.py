@@ -12,23 +12,23 @@ class PlanStep(BaseModel):
     step_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the plan step")
     title: str
     description: str
-    dependencies: List[str] = []
+    dependencies: List[str] = Field(default_factory=list)
     completed: bool = False
     
 class ToolCall(BaseModel):
     tool_name: str
     arguments: Dict[str, Any]
-    timestamp: datetime = Field(default_factory=datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CodeArtifact(BaseModel):
     artifact_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     filename: str
     language: str = "python"
     content: str
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ExecutionLog(BaseModel):
-    timestamp: datetime = Field(default_factory=datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     level: str
     message: str
 
@@ -38,11 +38,29 @@ class ExecutionResult(BaseModel):
     stderr: Optional[str] = None
     exit_code: Optional[int] = None
     execution_time: Optional[float] = None
+    command: Optional[str] = None
+    artifact_id: Optional[str] = None
 
 class AgentEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     event_type: str
     source_agent: str
-    timestamp: datetime = Field(default_factory=datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: Dict[str, Any]
 
+
+class EvaluationReport(BaseModel):
+    passed: bool
+    score: float = 0.0
+    summary: str
+    checks: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ExperimentRecord(BaseModel):
+    run_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str
+    status: str
+    metrics: Dict[str, float] = Field(default_factory=dict)
+    params: Dict[str, Any] = Field(default_factory=dict)
+    artifacts: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,48 +1,39 @@
-import uuid
+import argparse
 
-from graph.workflow import app
-from core.enums import WorkflowStatus
-
-
-initial_state = {
-    "task_id": str(uuid.uuid4()),
-    "user_request": "Build a Python script that downloads historical AAPL stock data and calculates the average closing price.",
-    "current_plan": [],
-    "active_step_id": None,
-    "generated_artifacts": [],
-    "latest_execution": None,
-    "execution_logs": [],
-    "retrieved_context": [],
-    "reflection_notes": [],
-    "retry_count": 0,
-    "iterations": 0,
-    "status": WorkflowStatus.INITIALIZED,
-    "events": [],
-    "metrics": {},
-}
+from core.workflow_runner import stream_workflow
 
 
-final_output = None
+def main():
+    parser = argparse.ArgumentParser(description="Run the autonomous multi-agent backend workflow.")
+    parser.add_argument(
+        "request",
+        nargs="?",
+        default="Build a Python script that calculates the average closing price from a small in-memory AAPL price list.",
+        help="User request for the agent system.",
+    )
+    parser.add_argument("--max-retries", type=int, default=None)
+    args = parser.parse_args()
+
+    final_state = None
+    for update in stream_workflow(args.request, max_retries=args.max_retries):
+        node = update["node"]
+        state = update["state"]
+        final_state = state
+        print(f"\n=== Completed Node: {node} ===")
+        print(f"Status: {state['status']}")
+        if state["events"]:
+            print(f"Latest Event: {state['events'][-1].event_type}")
+
+    print("\n================ FINAL ARTIFACT ================\n")
+    if final_state and final_state["generated_artifacts"]:
+        artifact = final_state["generated_artifacts"][-1]
+        print(f"Filename: {artifact.filename}\n")
+        print(artifact.content)
+
+    if final_state and final_state.get("evaluation"):
+        print("\n================ EVALUATION ================\n")
+        print(final_state["evaluation"].summary)
 
 
-for output in app.stream(initial_state):
-    for node_name, node_result in output.items():
-        print(f"\n=== Completed Node: {node_name} ===")
-
-        if "status" in node_result:
-            print(f"Status: {node_result['status']}")
-
-        if "events" in node_result:
-            latest_event = node_result["events"][-1]
-            print(f"Latest Event: {latest_event.event_type}")
-
-        final_output = node_result
-
-
-print("\n================ FINAL ARTIFACT ================\n")
-
-if final_output and final_output.get("generated_artifacts"):
-    artifact = final_output["generated_artifacts"][-1]
-
-    print(f"Filename: {artifact.filename}\n")
-    print(artifact.content)
+if __name__ == "__main__":
+    main()

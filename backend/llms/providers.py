@@ -1,13 +1,23 @@
-from langchain_community.llms import Ollama
+from core.config import settings
+from tools.ollama import ollama_client
 
 
-planner_llm = Ollama(
-    model="llama3.1:8b",
-    temperature=0.1,
-)
+class LocalOllamaLLM:
+    def __init__(self, model: str, temperature: float = 0.0):
+        self.model = model
+        self.temperature = temperature
+
+    def invoke(self, prompt: str, system: str | None = None) -> str:
+        return ollama_client.generate(
+            model=self.model,
+            prompt=prompt,
+            temperature=self.temperature,
+            system=system,
+        )
 
 
-coder_llm = Ollama(
-    model="qwen2.5-coder:3b",
-    temperature=0.0,
-)
+planner_llm = LocalOllamaLLM(settings.planner_model, temperature=0.1)
+researcher_llm = LocalOllamaLLM(settings.researcher_model, temperature=0.1)
+coder_llm = LocalOllamaLLM(settings.coder_model, temperature=0.0)
+debugger_llm = LocalOllamaLLM(settings.debugger_model, temperature=0.0)
+evaluator_llm = LocalOllamaLLM(settings.evaluator_model, temperature=0.0)

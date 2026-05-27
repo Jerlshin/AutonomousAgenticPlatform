@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+langgraph
+pydantic
+redis
+qdrant-client
+mlflow
+psycopg2-binary

@@ -10,9 +10,13 @@ from enum import Enum
 # Tracks the lifecycle or current phase of an execution pipeline
 class WorkflowStatus(str, Enum):
     INITIALIZED = "initialized"
+    PLANNED = "planned"
+    RESEARCHING = "researching"
     PLANNING = "planning"
     CODING = "coding"
     EXECUTING = "executing"
+    DEBUGGING = "debugging"
+    LOGGING = "logging"
     EVALUATING = "evaluating"
     REFLECTING = "reflecting"
     COMPLETED = "completed"
@@ -22,9 +26,12 @@ class WorkflowStatus(str, Enum):
 class EventType(str, Enum):
     STATE_UPDATE = "state_update"
     PLAN_CREATED = "plan_created"
+    RESEARCH_COMPLETED = "research_completed"
     CODE_GENERATED = "code_generated"
     EXECUTION_STARTED = "execution_started"
     EXECUTION_COMPLETED = "execution_completed"
+    DEBUG_PATCH_CREATED = "debug_patch_created"
+    MLFLOW_LOGGED = "mlflow_logged"
+    EVALUATION_COMPLETED = "evaluation_completed"
     ERROR = "error"
     REFLECTION = "reflection"
-

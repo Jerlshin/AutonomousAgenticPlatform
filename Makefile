@@ -1,11 +1,13 @@
-.PHONY: help infra-up infra-down backend-init backend-run clean
+.PHONY: help infra-up infra-down sandbox-build backend-check backend-run backend-cli clean
 
 help:
 	@echo "Available commands:"
 	@echo "  make infra-up      - Launch local Docker background database infrastructure"
 	@echo "  make infra-down    - Spin down running local database infrastructures"
-	@echo "  make backend-init  - Provision Python virtual isolation and compile bindings"
-	@echo "  make backend-run   - Spin up local active FastAPI gateway instances"
+	@echo "  make sandbox-build - Build the restricted Python execution sandbox image"
+	@echo "  make backend-check - Verify the ai_env backend dependency environment"
+	@echo "  make backend-run   - Spin up local FastAPI gateway with conda ai_env"
+	@echo "  make backend-cli   - Run a sample multi-agent workflow from the CLI"
 	@echo "  make clean         - Clear volatile cache lines, pycache trees, and indexes"
 
 infra-up:
@@ -14,13 +16,17 @@ infra-up:
 infra-down:
 	docker compose -f infrastructure/docker-compose.yml down
 
-backend-init:
-	cd backend && python3.11 -m venv .venv
-	./backend/.venv/bin/pip install --upgrade pip
-	./backend/.venv/bin/pip install fastapi uvicorn celery redis langgraph langchain llama-index qdrant-client mlflow psycopg2-binary
+sandbox-build:
+	docker build -t autonomous-ai-sandbox:latest -f mlops/sandbox.Dockerfile .
+
+backend-check:
+	conda run -n ai_env python -c "import fastapi, langgraph, pydantic; print('ai_env backend dependencies ok')"
 
 backend-run:
-	export $$(cat .env | xargs) && cd backend && .venv/bin/uvicorn api.main:app --reload --port 8000
+	cd backend && conda run -n ai_env uvicorn api.main:app --reload --port 8000
+
+backend-cli:
+	cd backend && conda run -n ai_env python main.py
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +

@@ -8,22 +8,28 @@ class PlannerAgent(BaseAgent):
     name = "planner_agent"
     
     def run(self, state):
-        print("\n[Planner Agent] Creating execution strategy...")
-        
         prompt = f"""
-        You are an elite AI systems planner.
+        You are the Planner Agent for an autonomous AI research and development platform.
         
-        Break the following request into a maximum of 5 highly logical execution steps.
+        Break the user request into 3 to 5 concrete execution steps for the other agents.
+        Include research, coding, execution/debugging, and evaluation when relevant.
         
         Request:
         {state['user_request']}
         
         Rules:
-        - Return concise 
+        - Return one step per line.
+        - No markdown bullets.
+        - Keep each line concise and actionable.
         """
         
         response = planner_llm.invoke(prompt)
-        raw_steps = [step.strip() for step in response.strip().split("\n") if step.strip()]
+        raw_steps = [
+            step.strip(" -0123456789.")
+            for step in response.strip().split("\n")
+            if step.strip()
+        ]
+        raw_steps = raw_steps[:5] or ["Generate and validate a Python implementation for the request."]
         structured_steps = []
         
         for idx, step in enumerate(raw_steps):
@@ -46,4 +52,3 @@ class PlannerAgent(BaseAgent):
             "status": WorkflowStatus.PLANNED,
             "events": state["events"] + [event],
         }
-        
