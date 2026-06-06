@@ -1,7 +1,14 @@
 from core.config import settings
 from tools.ollama import ollama_client
 
+"""
+### Notes:
 
+* Synchronous - blocking
+* Asychronous - non-blocking
+"""
+
+# This module defines LLM provider classes and initializes instances for different agent roles.
 class LocalOllamaLLM:
     def __init__(self, model: str, temperature: float = 0.0):
         self.model = model
@@ -16,7 +23,7 @@ class LocalOllamaLLM:
             json_mode=json_mode,
         )
 
-
+# Initialize LLM instances
 planner_llm = LocalOllamaLLM(settings.planner_model, temperature=0.1)
 researcher_llm = LocalOllamaLLM(settings.researcher_model, temperature=0.1)
 coder_llm = LocalOllamaLLM(settings.coder_model, temperature=0.0)

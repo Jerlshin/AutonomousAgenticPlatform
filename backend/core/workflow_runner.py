@@ -18,6 +18,8 @@ def create_initial_state(user_request: str, max_retries: int | None = None) -> A
         "user_request": user_request,
         "current_plan": [],
         "active_step_id": None,
+        "human_query": None,
+        "human_response": None,
         "generated_artifacts": [],
         "latest_execution": None,
         "execution_logs": [],
@@ -58,9 +60,9 @@ async def run_workflow(user_request: str, max_retries: int | None = None) -> Age
         return full_state.values
 
 
-async def stream_workflow(user_request: str, max_retries: int | None = None) -> AsyncIterator[Dict[str, Any]]:
+async def stream_workflow(user_request: str, max_retries: int | None = None, input_queue: Any = None) -> AsyncIterator[Dict[str, Any]]:
     state = create_initial_state(user_request, max_retries=max_retries)
-    config = {"configurable": {"thread_id": state["task_id"]}}
+    config = {"configurable": {"thread_id": state["task_id"], "input_queue": input_queue}}
     yield {"node": "initialized", "state": state}
     try:
         async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:

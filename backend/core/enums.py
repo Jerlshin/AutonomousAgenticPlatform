@@ -21,6 +21,7 @@ class WorkflowStatus(str, Enum):
     REFLECTING = "reflecting"
     COMPLETED = "completed"
     FAILED = "failed"
+    WAITING_FOR_INPUT = "waiting_for_input"
 
 # Types of events that occur inside your architecture
 class EventType(str, Enum):

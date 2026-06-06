@@ -47,14 +47,33 @@ async def stream_workflow_endpoint(request: Request, payload: WorkflowRunRequest
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+import asyncio
+
 @app.websocket("/workflows/ws")
 async def workflow_websocket(websocket: WebSocket):
     await websocket.accept()
     payload = await websocket.receive_json()
     request = WorkflowRunRequest(**payload)
-    async for update in stream_workflow(request.user_request, max_retries=request.max_retries):
-        await websocket.send_json(jsonable_encoder(update))
-    await websocket.close()
+    
+    input_queue = asyncio.Queue()
+    
+    async def listen_for_input():
+        try:
+            while True:
+                msg = await websocket.receive_json()
+                if "human_input" in msg:
+                    await input_queue.put(msg["human_input"])
+        except Exception:
+            pass
+            
+    listener_task = asyncio.create_task(listen_for_input())
+    
+    try:
+        async for update in stream_workflow(request.user_request, max_retries=request.max_retries, input_queue=input_queue):
+            await websocket.send_json(jsonable_encoder(update))
+    finally:
+        listener_task.cancel()
+        await websocket.close()
 
 
 @app.get("/experiments")

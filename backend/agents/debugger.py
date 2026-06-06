@@ -44,6 +44,9 @@ class DebugAgent(BaseAgent):
         - Return ONLY corrected executable Python code.
         - No markdown.
         - No explanations.
+        - The code runs in an isolated sandbox WITHOUT API keys or credentials.
+        - If the code failed because it required an authenticated API (e.g., NewsAPI returned an error, missing API key), you MUST rewrite it to use mock data instead.
+        - Handle all possible exceptions gracefully.
         """
         patched_code_raw = await debugger_llm.invoke(prompt)
         match = re.search(r"```(?:python)?\n?(.*?)\n?```", patched_code_raw, re.DOTALL)

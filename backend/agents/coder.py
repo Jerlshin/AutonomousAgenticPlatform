@@ -38,6 +38,9 @@ class CodingAgent(BaseAgent):
         - No explanations.
         - Prefer Python standard library unless the request requires a common package.
         - Include a small __main__ path or direct executable logic.
+        - The code runs in an isolated sandbox WITHOUT API keys or credentials.
+        - If the request requires authenticated APIs (e.g., NewsAPI, OpenAI), you MUST use mock data or public unauthenticated endpoints instead.
+        - Handle all possible exceptions gracefully (e.g., KeyErrors from missing JSON fields).
         """
 
         generated_code = await coder_llm.invoke(prompt)

@@ -19,6 +19,10 @@ class AgentState(TypedDict):
     current_plan: List[PlanStep]
     active_step_id: Optional[str]
     
+    # Human-in-the-Loop
+    human_query: Optional[str]
+    human_response: Optional[str]
+    
     # Generated artifacts
     generated_artifacts: Annotated[List[CodeArtifact], operator.add]
     
