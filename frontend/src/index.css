@@ -1,29 +1,124 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap');
 
+/* PrismJS Tomorrow Night Theme (customized) */
+code[class*="language-"],
+pre[class*="language-"] {
+  color: #ccc;
+  background: none;
+  font-family: 'Fira Code', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  font-size: 0.85em;
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  word-wrap: normal;
+  line-height: 1.5;
+  tab-size: 4;
+  hyphens: none;
+}
+
+pre[class*="language-"] {
+  padding: 1em;
+  margin: .5em 0;
+  overflow: auto;
+}
+
+:not(pre) > code[class*="language-"],
+pre[class*="language-"] {
+  background: #2d2d2d;
+}
+
+.token.comment,
+.token.block-comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #999;
+}
+
+.token.punctuation {
+  color: #ccc;
+}
+
+.token.tag,
+.token.attr-name,
+.token.namespace,
+.token.deleted {
+  color: #e2777a;
+}
+
+.token.function-name {
+  color: #6196cc;
+}
+
+.token.boolean,
+.token.number,
+.token.function {
+  color: #f08d49;
+}
+
+.token.property,
+.token.class-name,
+.token.constant,
+.token.symbol {
+  color: #f8c555;
+}
+
+.token.selector,
+.token.important,
+.token.atrule,
+.token.keyword,
+.token.builtin {
+  color: #cc99cd;
+}
+
+.token.string,
+.token.char,
+.token.attr-value,
+.token.regex,
+.token.variable {
+  color: #7ec699;
+}
+
+.token.operator,
+.token.entity,
+.token.url {
+  color: #67cdcc;
+}
+
+.token.important,
+.token.bold {
+  font-weight: bold;
+}
+.token.italic {
+  font-style: italic;
+}
+
 :root {
-  --bg-primary: #0a0a0c;
-  --bg-secondary: #121217;
-  --bg-panel: rgba(30, 30, 35, 0.4);
+  --bg-primary: hsl(220, 20%, 6%);
+  --bg-secondary: hsl(220, 20%, 10%);
+  --bg-panel: rgba(25, 30, 40, 0.4);
   
-  --text-primary: #f0f0f5;
-  --text-secondary: #a0a0b0;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
   
   --accent-blue: #3b82f6;
-  --accent-blue-glow: rgba(59, 130, 246, 0.5);
+  --accent-blue-glow: rgba(59, 130, 246, 0.3);
   
   --accent-purple: #8b5cf6;
-  --accent-purple-glow: rgba(139, 92, 246, 0.5);
+  --accent-purple-glow: rgba(139, 92, 246, 0.3);
   
   --accent-green: #10b981;
-  --accent-green-glow: rgba(16, 185, 129, 0.5);
+  --accent-green-glow: rgba(16, 185, 129, 0.3);
   
   --accent-red: #ef4444;
-  --accent-red-glow: rgba(239, 68, 68, 0.5);
+  --accent-red-glow: rgba(239, 68, 68, 0.3);
   
   --border-color: rgba(255, 255, 255, 0.08);
-  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.05);
   --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -35,6 +130,9 @@
 body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08), transparent 25%);
   color: var(--text-primary);
   line-height: 1.5;
   min-height: 100vh;
@@ -43,14 +141,14 @@ body {
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -59,11 +157,12 @@ body {
 
 .glass-panel {
   background: var(--bg-panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: var(--glass-border);
   border-radius: 16px;
   box-shadow: var(--glass-shadow);
+  box-shadow: var(--inner-glow), 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
 .code-font {

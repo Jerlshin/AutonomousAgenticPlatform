@@ -56,6 +56,8 @@ export interface AgentState {
   retrieved_context: string[];
   reflection_notes: string[];
   events: AgentEvent[];
+  human_query?: string;
+  human_response?: string;
   retry_count: number;
   iterations: number;
   status: string;

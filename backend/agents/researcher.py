@@ -46,7 +46,14 @@ class ResearchAgent(BaseAgent):
         except json.JSONDecodeError:
             parsed = {"requires_human_input": False, "human_query": None, "synthesis": response}
             
-        context = local_hits + [parsed.get("synthesis", "")]
+        synthesis_val = parsed.get("synthesis", "")
+        if isinstance(synthesis_val, list):
+            synthesis_val = "\n".join(str(item) for item in synthesis_val)
+        elif not isinstance(synthesis_val, str):
+            synthesis_val = str(synthesis_val)
+            
+        context = local_hits + [synthesis_val]
+        
         event = create_event(
             event_type=EventType.RESEARCH_COMPLETED,
             source_agent=self.name,

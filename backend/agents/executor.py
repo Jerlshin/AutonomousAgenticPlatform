@@ -28,6 +28,8 @@ class ExecutionAgent(BaseAgent):
             source_agent=self.name,
             payload={"artifact_id": artifact.artifact_id, "filename": artifact.filename},
         )
+
+        # 
         result = await sandbox.execute(artifact)
         completed = create_event(
             event_type=EventType.EXECUTION_COMPLETED,

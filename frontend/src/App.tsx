@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Settings, Activity, ShieldAlert } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import type { AgentState } from './types';
 import { WorkflowInput } from './components/WorkflowInput';
@@ -7,7 +8,7 @@ import { AgentProgress } from './components/AgentProgress';
 import { StateVisualizer } from './components/StateVisualizer';
 import { AgentMap } from './components/AgentMap';
 
-function App() {
+export default function App() {
   const [state, setState] = useState<AgentState | null>(null);
   const [currentNode, setCurrentNode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,6 +72,12 @@ function App() {
     setIsLoading(false);
   };
 
+  const submitHumanInput = (inputValue: string) => {
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({ human_input: inputValue || "NO" }));
+    }
+  };
+
   return (
     <div className="app-layout">
       {/* Top Navigation Bar */}
@@ -91,6 +98,55 @@ function App() {
           </button>
         )}
       </header>
+
+      {/* Human-in-the-loop Overlay */}
+      <AnimatePresence>
+        {state?.status === 'waiting_for_input' && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="hitl-overlay"
+          >
+            <div className="hitl-modal glass-panel">
+              <h3 style={{ marginTop: 0, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.25rem' }}>
+                <ShieldAlert size={24} />
+                Agent Intervention Required
+              </h3>
+              <p style={{ color: '#e2e8f0', marginBottom: '1.5rem', lineHeight: 1.6, fontSize: '1.05rem' }}>
+                {state.human_query}
+              </p>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const val = (e.currentTarget.elements.namedItem('human_input') as HTMLInputElement).value;
+                submitHumanInput(val);
+              }}>
+                <input 
+                  name="human_input"
+                  type="text" 
+                  placeholder="Enter value or type NO..." 
+                  style={{ 
+                    width: '100%', padding: '1rem', borderRadius: '8px', 
+                    border: '1px solid rgba(59, 130, 246, 0.3)', 
+                    background: 'rgba(0,0,0,0.5)', color: '#fff', 
+                    marginBottom: '1.5rem', fontSize: '1rem',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)'
+                  }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => submitHumanInput("NO")} className="tab-btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#ccc' }}>
+                    Decline / Skip
+                  </button>
+                  <button type="submit" className="submit-btn" style={{ padding: '0.75rem 2rem' }}>
+                    Confirm Input
+                  </button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 3-Panel Main Layout */}
       <div className="app-container">
@@ -121,5 +177,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
