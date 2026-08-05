@@ -1,34 +1,23 @@
-# macOS Native Cache
-.DS_Store
-.AppleDouble
-.LSOverride
+# Environment & Secrets
+.env
+*.env.local
 
-# Python Runtimes & Dependency Environments
-__pycache__/
-*.py[cod]
-*$py.class
+# Python & Virtual Environments
 .venv/
 venv/
-ENV/
-.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Tooling & Test Caches
 .ruff_cache/
+.pytest_cache/
+.coverage
 
-# Frontend Dependency Ecosystem & Compiled Assets
-node_modules/
-.next/
-out/
-build/
-.pnpm-store/
+# IDEs
+.vscode/
+.idea/
+.DS_Store
 
-# Core Application Engine Context & Secrets
-.env
-.env.local
-.env.development.local
-
-# Databases, Storage Volatiles & Logging Files
+# DB / Local Storage
 *.db
-*.log
-pgdata/
-qdrant_storage/
-mlruns/
-.mlflow/
+*.sqlite3

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonomous-ai-backend"
+version = "0.1.0"
+description = "Autonomous Multi-Agent AI R&D Platform Backend"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+# Exclude commonly ignored directories
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "alembic/versions",  # Auto-generated migrations shouldn't break linting rules
+]
+
+# Standard line length matching Black style
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+# Select rules:
+# E/W = Pycodestyle (errors/warnings)
+# F   = Pyflakes (unused imports, variables)
+# I   = Isort (import sorting)
+# B   = Bugbear (detects likely bugs/design errors)
+# UP  = Pyupgrade (modern Python syntax suggestions)
+# ASYNC = Asyncio checks (critical for FastAPI/async code)
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC"]
+
+# Ignore rules that conflict with modern FastAPI/Pydantic patterns:
+# B008: Do not perform function calls in argument defaults (needed for FastAPI Depends())
+# E501: Line too long (handled gracefully by auto-formatter)
+ignore = ["B008", "E501"]
+
+# Allow fix for all enabled rules (when using `ruff check --fix`)
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when prefixed with an underscore
+dummy-variable-accept-regex = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
