@@ -1,0 +1,64 @@
+# spin up a isolated postgres database container
+services:
+  postgres:
+    image: postgres:16-alpine # downloas the official postgres image built on alphine linux
+    container_name: autonomous_postgres 
+    restart: always
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password_dev
+    ports:
+      - "5432:5432" # mpas port inside the container to port on the mac
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # mounts a persistent docker storage volume to the internal database storage folder
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: autonomous_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: autonomous_qdrant
+    restart: always
+    ports:
+      - "6333:6333" # REST API and WebUI - ordinary HTTP (GET, POST, PUT, DELETE)
+      - "6334:6334" # gRPC API - instead of JSON, it sends binary data. Faster.
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.1
+    container_name: autonomous_mlflow
+    restart: always
+    ports:
+      - "5001:5000" # Map host port 5001 to container port 5000
+    volumes:
+      - mlflow_data:/mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  mlflow_data:

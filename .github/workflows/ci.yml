@@ -1,5 +1,7 @@
+# GitHub Actions workflow configuration. It automates CI
 name: CI Pipeline
 
+# automatically fires this workflow every time code is pushed or pulled
 on:
   push:
     branches: [ main ]
@@ -10,17 +12,17 @@ jobs:
   backend-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # checks out the repo source code into runner VM so the workflow can access it
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5 # installs and configures python 3.11
         with:
           python-version: '3.11'
           
-      - name: Install Ruff
+      - name: Install Ruff # setup ruff
         run: pip install ruff
         
-      - name: Run Ruff Lint & Format Checks
+      - name: Run Ruff Lint & Format Checks # runs the commands
         run: |
           cd backend
           ruff check .

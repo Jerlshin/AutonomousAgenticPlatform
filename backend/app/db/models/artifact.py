@@ -1,0 +1,68 @@
+"""Artifact ORM model storing metadata for generated scripts, models, and reports."""
+
+import uuid
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Optional
+
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.db.models.task import Task
+
+
+class Artifact(Base):
+    """Metadata record for files or code artifacts produced by agents."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        description="Unique identifier for the artifact.",
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        description="Foreign key referencing the owning Task.",
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        description="Artifact filename or resource identifier (e.g., train_model.py).",
+    )
+    artifact_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+        description="Type category of artifact (code, model, report, dataset).",
+    )
+    file_path: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        description="Path to stored artifact file on disk or sandbox volume.",
+    )
+    content: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        description="Raw text or source code representation of the artifact.",
+    )
+    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        description="Additional technical attributes (e.g. model metrics, file size).",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        description="UTC creation timestamp.",
+    )
+
+    task: Mapped["Task"] = relationship("Task", back_populates="artifacts")
+
+    def __repr__(self) -> str:
+        return f"<Artifact name='{self.name}' type='{self.artifact_type}' task_id={self.task_id}>"

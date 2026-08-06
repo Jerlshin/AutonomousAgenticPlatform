@@ -1,0 +1,65 @@
+"""Agent Log ORM model for storing multi-agent execution audit trails."""
+
+import uuid
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Optional
+
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.db.models.task import Task
+
+
+class AgentLog(Base):
+    """Audit log entry recorded by agents during task execution."""
+
+    __tablename__ = "agent_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        description="Unique identifier for the log entry.",
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        description="Foreign key pointing to the associated Task.",
+    )
+    agent_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        description="Name of the agent emitting the log (e.g. planner, coder, debugger).",
+    )
+    level: Mapped[str] = mapped_column(
+        String(20),
+        default="INFO",
+        nullable=False,
+        description="Log severity level (INFO, WARNING, ERROR, DEBUG).",
+    )
+    message: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        description="Detailed log message emitted during node execution.",
+    )
+    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        description="Structured JSON payload containing agent state or tool inputs/outputs.",
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+        description="Exact UTC timestamp when the log entry was generated.",
+    )
+
+    task: Mapped["Task"] = relationship("Task", back_populates="logs")
+
+    def __repr__(self) -> str:
+        return f"<AgentLog agent='{self.agent_name}' level='{self.level}' task_id={self.task_id}>"
