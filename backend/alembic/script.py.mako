@@ -1,3 +1,8 @@
+# Alembic (the database migration tool for SQLAlchemy), this file serves as the blueprint/template that generates every few migration script inside your /versions/
+
+# up_revision - unique has identifying this specific migration
+# down_revision - the unique hash of the previous migration
+
 """${message}
 
 Revision ID: ${up_revision}
