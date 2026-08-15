@@ -16,3 +16,12 @@ __all__ = [
     "AgentLog",
     "Artifact",
 ]
+
+"""
+We have done SQLAlchemy ORM models. The next step is turning those python classes into real postgreSQL tables and building the data access layer.
+
+1. Database Migration with Alembic
+2. Pydantic Schemas
+3. Async Database CRUD Operations
+4. Core FastAPI API routes
+"""

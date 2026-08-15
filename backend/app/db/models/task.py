@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from app.db.models.log import AgentLog
 
 # execution status
-class TaskStatus(str, enum.Enum):
+class TaskStatus(str, enum.Enum): # inherits from both str and enum.Enum
     """Lifecycle status states for multi-agent task execution."""
 
     PENDING = "PENDING"
@@ -28,13 +28,13 @@ class TaskStatus(str, enum.Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
-# status
+# status - primary table schema
 class Task(Base):
     """Represents an autonomous multi-agent task workflow execution."""
 
     __tablename__ = "tasks"
 
-    id: Mapped[uuid.UUID] = mapped_column(
+    id: Mapped[uuid.UUID] = mapped_column( # Generates unique 128-bit UUID primary key to safely identify execution jobs across distributed workers.
         primary_key=True,
         default=uuid.uuid4,
         description="Unique identifier for the task job.",
