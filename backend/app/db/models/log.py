@@ -25,42 +25,42 @@ class AgentLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
         default=uuid.uuid4,
-        description="Unique identifier for the log entry.",
+        comment="Unique identifier for the log entry.",
     )
     task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tasks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        description="Foreign key pointing to the associated Task.",
+        comment="Foreign key pointing to the associated Task.",
     )
     agent_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
         index=True,
-        description="Name of the agent emitting the log (e.g. planner, coder, debugger).",
+        comment="Name of the agent emitting the log (e.g. planner, coder, debugger).",
     )
     level: Mapped[str] = mapped_column(
         String(20),
         default="INFO",
         nullable=False,
-        description="Log severity level (INFO, WARNING, ERROR, DEBUG).",
+        comment="Log severity level (INFO, WARNING, ERROR, DEBUG).",
     )
     message: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        description="Detailed log message emitted during node execution.",
+        comment="Detailed log message emitted during node execution.",
     )
     metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON,
         nullable=True,
-        description="Structured JSON payload containing agent state or tool inputs/outputs.",
+        comment="Structured JSON payload containing agent state or tool inputs/outputs.",
     )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
-        description="Exact UTC timestamp when the log entry was generated.",
+        comment="Exact UTC timestamp when the log entry was generated.",
     )
 
     # Connects each AgentLog entry back to its parent Task instance, complementing the logs 

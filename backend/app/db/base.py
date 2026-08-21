@@ -13,4 +13,4 @@ class Base(DeclarativeBase):
     
     Provides a shared metadata registry for schema generation and Alembic migrations.
     """
-    pass 
+    pass

@@ -24,45 +24,45 @@ class Artifact(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
         default=uuid.uuid4,
-        description="Unique identifier for the artifact.",
+        comment="Unique identifier for the artifact.",
     )
     task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tasks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        description="Foreign key referencing the owning Task.",
+        comment="Foreign key referencing the owning Task.",
     )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        description="Artifact filename or resource identifier (e.g., train_model.py).",
+        comment="Artifact filename or resource identifier (e.g., train_model.py).",
     )
     artifact_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         index=True,
-        description="Type category of artifact (code, model, report, dataset).",
+        comment="Type category of artifact (code, model, report, dataset).",
     )
     file_path: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
-        description="Path to stored artifact file on disk or sandbox volume.",
+        comment="Path to stored artifact file on disk or sandbox volume.",
     )
     content: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
-        description="Raw text or source code representation of the artifact.",
+        comment="Raw text or source code representation of the artifact.",
     )
     metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON,
         nullable=True,
-        description="Additional technical attributes (e.g. model metrics, file size).",
+        comment="Additional technical attributes (e.g. model metrics, file size).",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        description="UTC creation timestamp.",
+        comment="UTC creation timestamp.",
     )
 
     task: Mapped["Task"] = relationship("Task", back_populates="artifacts")

@@ -37,48 +37,48 @@ class Task(Base):
     id: Mapped[uuid.UUID] = mapped_column( # Generates unique 128-bit UUID primary key to safely identify execution jobs across distributed workers.
         primary_key=True,
         default=uuid.uuid4,
-        description="Unique identifier for the task job.",
+        comment="Unique identifier for the task job.",
     )
     title: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        description="Concise descriptive title for the task.",
+        comment="Concise descriptive title for the task.",
     )
     prompt: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        description="Original user prompt or query submitted to the platform.",
+        comment="Original user prompt or query submitted to the platform.",
     )
     status: Mapped[TaskStatus] = mapped_column(
         SQLEnum(TaskStatus, name="task_status_enum"),
         default=TaskStatus.PENDING,
         nullable=False,
         index=True,
-        description="Current execution state of the task.",
+        comment="Current execution state of the task.",
     )
     result: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON,
         nullable=True,
-        description="Final JSON result payload returned by the multi-agent graph.",
+        comment="Final JSON result payload returned by the multi-agent graph.",
     )
     error: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
-        description="Captured stack trace or error message if execution fails.",
+        comment="Captured stack trace or error message if execution fails.",
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        description="Timestamp when the task was initially submitted.",
+        comment="Timestamp when the task was initially submitted.",
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
-        description="Timestamp when the task record was last modified.",
+        comment="Timestamp when the task record was last modified.",
     )
 
     # Cascade deletes logs and generated artifacts when a task is deleted

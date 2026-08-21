@@ -11,7 +11,7 @@ from app.schemas.task import TaskCreate, TaskListResponse, TaskRead, TaskUpdate
 
 router = APIRouter()
 
-
+# creating a new task
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED, summary="Submit Task")
 async def create_task(
     payload: TaskCreate,
