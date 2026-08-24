@@ -34,13 +34,13 @@ Not a log file and a number — an actual deliverable:
 
 | | |
 |---|---|
-| 📄 **`REPORT.md`** | Objective, results against every criterion, approach, *what went wrong and how it was fixed*, reproduction instructions, limitations |
-| 🐍 **`main.py`** | The exact source that produced the numbers |
-| 🧠 **`model/`** | A loadable MLflow model, registered when it meets its criteria |
-| 📊 **`metrics.json`** | Schema-validated metrics, params, dataset hash, runtime |
-| 📈 **Plots** | Confusion matrices, ROC curves, learning curves |
-| 🔬 **MLflow run** | Parent run per task, nested child run per attempt, fully tagged |
-| 📦 **`bundle.zip`** | Every file above, written to the run's artifact directory |
+| **`REPORT.md`** | Objective, results against every criterion, approach, *what went wrong and how it was fixed*, reproduction instructions, limitations |
+| **`main.py`** | The exact source that produced the numbers |
+| **`model/`** | A loadable MLflow model, registered when it meets its criteria |
+| **`metrics.json`** | Schema-validated metrics, params, dataset hash, runtime |
+| **Plots** | Confusion matrices, ROC curves, learning curves |
+| **MLflow run** | Parent run per task, nested child run per attempt, fully tagged |
+| **`bundle.zip`** | Every file above, written to the run's artifact directory |
 
 **Every run produces a deliverable — including failed ones.** A run that never got the code working
 still returns a report explaining what was attempted, what broke, and what was tried. That
