@@ -2247,6 +2247,12 @@ falls.
 The dashboard's job is to make an autonomous run **legible while it happens**. It is not a CRUD
 admin panel with a log tail bolted on; the streaming view is the product.
 
+This section is the architectural summary — stack choices, the route map, and the protocol the
+UI is built against. The implementation-level plan (project structure, the exact state-management
+data flow, the remaining page-by-page build list, and the type-generation workflow) lives in
+[`docs/FRONTEND.md`](./FRONTEND.md), the same way agent internals live in
+[`AGENTS.md`](./AGENTS.md) and the MLflow contract lives in [`MLOPS.md`](./MLOPS.md).
+
 ### 18.1 Stack
 
 | Concern | Choice | Note |
@@ -2488,39 +2494,42 @@ says what moved and why.
 
 ## 21. Implementation status
 
-| Subsystem | Status | Gap to specification |
+Phases 0–5 and 7 of the [revised roadmap](../notes.md#revised-roadmap) are complete; Phase 6
+(frontend) has its transport and state layer done and its pages not yet built — see
+[`docs/FRONTEND.md`](./FRONTEND.md) for that remaining scope in detail. This table is the
+subsystem-level view underneath that.
+
+| Subsystem | Status | Notes |
 |---|---|---|
 | Config (`core/config.py`) | ✅ Complete | Every §14 variable declared; `DATABASE_URL` driver validation; generated `.env.example` (D-001, D-002, D-003, D-012, D-014 fixed) |
 | Async DB engine (`core/db.py`) | ✅ Complete | — |
-| ORM: task/log/artifact | ✅ Complete | Needs additive columns from [§7.1](#71-postgresql-schema) |
-| ORM: run/step/evaluation/experiment/sandbox_execution/corpus | ⬜ Not started | Migrations `0004`, `0005` |
-| Alembic | ✅ Complete | `include_object` excludes the LangGraph tables (D-006); squashed to one baseline, `0001_baseline` (D-011) |
-| Repositories / CRUD layer | ⬜ Not started | — |
+| ORM (task, log, artifact, run, step, evaluation, experiment, sandbox_execution, corpus, benchmark_result) | ✅ Complete | `db/models/` — one module per table, all mapped |
+| Alembic | ✅ Complete | Five migrations to head; `include_object` excludes the LangGraph tables (D-006); squashed baseline (D-011) |
 | API: health | ✅ Complete | Returns 503 when postgres/redis/qdrant is down, `degraded` for mlflow/ollama (D-013) |
-| API: tasks | ✅ Complete | Add `task_kind`, `tags`, run rollup |
-| API: runs / artifacts / corpus / agents / benchmarks | ⬜ Not started | [§8](#8-rest-api-contract) |
-| API: WebSocket | ⬜ Not started | [§9](#9-websocket-protocol) |
-| Redis layer (`core/redis.py`) | ⬜ Not started | Pool, Streams, locks, caches |
+| API: tasks, runs, corpus, benchmarks | ✅ Complete | [§8](#8-rest-api-contract)'s endpoint index, minus the bundle-download route (D-024) |
+| API: WebSocket | ✅ Complete | Full [§9](#9-websocket-protocol) protocol: ticket auth, replay-by-sequence, heartbeats, `cancel`/`approve`/`resync` |
+| Redis layer (`core/redis.py`) | ✅ Complete | Streams (append/backlog/live-read/trim), `RunLock`, the control pub/sub channel, ticket and idempotency keys |
 | Structured logging | ✅ Complete | `core/logging.py`: structlog to stdout as JSON, `run_id`/`step_id`/`node`/`agent`/`worker_id` bound once per node via `contextvars`, and the [§12.3](#123-structured-logging) redaction processor. Redaction matches both by key *and* by value, because a token pasted into an exception message has no key to match on. stdlib records go through the same `ProcessorFormatter` chain, so a sink that only covered migrated call sites cannot exist |
 | Prometheus metrics | ✅ Complete | `core/metrics.py` defines every metric in [§12.1](#121-metrics) and is instrumented across the API middleware, the `@node` envelope, the structured-output ladder, the sandbox driver, the vector store, the WebSocket pump and the run job. Free-form label values (`task_kind`, validator rejections, HTTP routes) are clamped to closed vocabularies at the boundary; every recording helper swallows its own errors, so a monitoring defect cannot fail a run |
 | LangGraph state schema | ✅ Complete | `AgentState` per [`AGENTS.md §3`](./AGENTS.md#3-state-schema): every channel declared, with the `append` / `merge_usage` / `merge_step_status` reducers |
-| Graph assembly (`engine/graph.py`) | 🟡 Partial | The correctness cycle `coder → sandbox_exec → debugger → coder`, its `debugger → planner` escalation, and `reporter → finalizer` as the sole terminal path, compiled with `AsyncPostgresSaver`; researcher, mlops, evaluator, `advance_step` and the HITL gate outstanding ([`AGENTS.md §4`](./AGENTS.md#4-graph-topology)) |
-| Agent nodes (all 9) | 🟡 Partial | `init`, `planner`, `coder` (with revision mode), `sandbox_exec`, `debugger`, `reporter` and `finalizer` implemented behind the `@node` envelope, which now carries the declared-`fallback` hook that makes `DEGRADE` and `SYNTHESISE_FALLBACK` structural; `researcher.py` still contains a copy of `qdrant_tool.py` (D-009); `mlops` and `evaluator` outstanding |
-| Prompts | 🟡 Partial | `engine/prompts/{planner,coder,debugger,reporter}.md`, semver'd front matter, version recorded in state; `researcher` and `evaluator` outstanding ([`AGENTS.md §7`](./AGENTS.md#7-agent-specifications)) |
+| Graph assembly (`engine/graph.py`) | ✅ Complete | The full topology in [`AGENTS.md §4`](./AGENTS.md#4-graph-topology): the correctness cycle `coder → sandbox_exec → debugger → coder`, its `debugger → planner` escalation, `researcher → coder`, `mlops → evaluator`, the `REFINE`/`REPLAN` loops, and `reporter → finalizer` as the sole terminal path — compiled with `AsyncPostgresSaver` |
+| Agent nodes (all 10) | ✅ Complete | `init`, `planner`, `researcher`, `coder` (with revision mode), `sandbox_exec`, `debugger`, `mlops`, `evaluator`, `reporter`, `finalizer` — all behind the `@node` envelope, whose declared `fallback` hook makes `DEGRADE` and `SYNTHESISE_FALLBACK` structural rather than a per-node `try` |
+| Prompts | ✅ Complete | `engine/prompts/{planner,coder,debugger,reporter,evaluator,researcher_query,researcher_extract}.md`, semver'd front matter, version recorded in state ([`AGENTS.md §7`](./AGENTS.md#7-agent-specifications)) |
 | Report construction (`engine/reporting.py`) | ✅ Complete | The eight-section [`AGENTS.md §7.8`](./AGENTS.md#78-reporter-agent) structure: a pure `report_context` projection of state, a Jinja2 template as the `SYNTHESISE_FALLBACK`, and post-generation section checking that splices the data sections in from state so the report cannot contradict `metrics.json` |
 | LLM client (`engine/llm.py`) | ✅ Complete | `langchain-ollama`, lazily imported, per-role model / temperature / `num_ctx` routing (D-004 fixed) |
-| Structured output / budgets / routing | 🟡 Partial | `engine/structured.py` repair ladder (stages 1–3, then raise) and `engine/routing.py` — `route_after_plan/code/exec/debug`, the `@guarded` budget check, the debug and sandbox ceilings and the three-fingerprint stagnation rule — at 100% branch coverage; field-wise extraction and the 80%-budget warning event outstanding |
-| Qdrant service | 🟡 Works | Sync `embed_documents` in async context blocks the loop; `search()` deprecated; no hybrid, no payload indexes (D-005) |
-| Ingestion pipeline | ⬜ Not started | [§7.3.4](#734-chunking-and-retrieval-parameters) |
-| Sandbox driver + images | 🟡 Partial | `DockerSandboxDriver` implements [§10.4](#104-exact-launch-configuration) exactly, plus the [§10.7](#107-static-validation-gate) static gate (100% covered, every table row enforced) and the [§10.9](#109-result-contract) result contract, with stderr parsed into a fingerprinted `ErrorRecord` by `engine/errors.py`; the two images are still empty Dockerfiles |
+| Structured output / budgets / routing | ✅ Complete | `engine/structured.py`'s repair ladder and `engine/routing.py`'s `route_after_plan/research/code/exec/debug/eval` — the `@guarded` budget check, the debug and sandbox ceilings, and the three-fingerprint stagnation rule — at 100% branch coverage |
+| Qdrant service | ✅ Complete | `hybrid_search` on native `query_points` with dense+sparse RRF fusion, payload indexes, and `aembed_documents`/`aembed_query` off the event loop (D-005 fixed) |
+| Ingestion pipeline | ✅ Complete | `services/ingestion.py`: chunking, SHA-256 content hashing, corpus writes |
+| Sandbox driver | ✅ Complete | `DockerSandboxDriver` implements [§10.4](#104-exact-launch-configuration) exactly, the [§10.7](#107-static-validation-gate) static gate (100% covered, every table row enforced) and the [§10.9](#109-result-contract) result contract, with stderr parsed into a fingerprinted `ErrorRecord` by `engine/errors.py` |
+| Sandbox images | ⬜ Not started | `Dockerfile.exec`/`Dockerfile.train` ([§10.10](#1010-sandbox-images)) do not exist yet; `make build-sandbox` detects this and prints the spec section rather than failing |
 | Dataset registry | 🟡 Partial | `services/datasets.py` reads and validates the manifest and binds plan steps to it; `scripts/seed_datasets.py` and the seeded volume are outstanding ([§10.8](#108-dataset-registry)) |
-| MLflow client | ⬜ Not started | [`MLOPS.md`](./MLOPS.md) |
-| arq worker | ⬜ Not started | [§5](#5-runtime-execution-model) |
-| Frontend | ⬜ Empty files | `package.json` and `tsconfig.json` are 0 bytes |
+| MLflow client | ✅ Complete | `services/mlflow_client.py`: run hierarchy, flavor-aware logging, alias-based registry promotion ([`MLOPS.md`](./MLOPS.md)) |
+| arq worker | ✅ Complete | `worker/{main,jobs,cron,queue}.py`: run dispatch, `mlflow_backfill`, `reap_interrupted_runs`, `reap_sandbox_containers`, `trim_event_streams` |
+| Frontend | 🟡 Partial | Transport and state layer complete — `useRunStream.ts`, `runStore.ts`, the generated WS event types, the REST client, one component (`RunHeader.tsx`). No page routes exist yet. Full remaining scope: [`docs/FRONTEND.md`](./FRONTEND.md) |
 | Docker Compose | 🟡 Partial | 4 data services plus the `observability` profile (Prometheus, Grafana, node-exporter, cAdvisor, postgres- and redis-exporter) and `linux-gpu` (DCGM). Health checks and `condition: service_healthy` throughout (D-008 fixed). api/worker/frontend still run on the host |
-| Sandbox Dockerfiles | ⬜ Empty | [§10.10](#1010-sandbox-images) |
 | CI | ✅ Complete | `ci.yml`: ruff check + format, `mypy`, the full suite with an 80% coverage gate, and a contracts job checking `.env.example`, the generated dashboards, documentation links and secret leakage. `docker-build.yml`: per-image Buildx builds with `type=gha` caching, then a compose smoke that waits for health, applies migrations, probes `/health/deep` and asserts `/metrics` serves samples. Frontend and empty-Dockerfile jobs are conditional and announce themselves ([§19.2](#192-workflow-files)) |
-| Tests | 🟡 Partial | 828 tests. Unit and component: state and reducers, criteria arithmetic, the static gate (100%), the launch configuration, traceback parsing, every node, the routers (100% branch), the graph end to end against a mock LLM, the observability surface (§12.1's metric table checked name-by-name against the registry, and every provisioned dashboard query checked against it), redaction, and bearer-token coverage of every mounted route. **Integration**: `tests/integration/test_sandbox_security.py` runs real containers against a real daemon and asserts [§13.1](#131-threat-model)'s T1–T5 and T7 — network denial, filesystem immutability, memory and CPU caps, PID limits, capability drop, wall-clock kill, path traversal. Backend coverage 86% against an 80% gate. No contract or load layers yet ([`AGENTS.md §12`](./AGENTS.md#12-testing-strategy)) |
+| Observability | ✅ Complete | Five Grafana dashboards (`llm-performance`, `sandbox-health`, `run-pipeline`, `retrieval-quality`, `system`) generated by `scripts/gen_dashboards.py` and checked for drift by `make check-dashboards`; eight Prometheus alert rules |
+| Tests | 🟡 Partial | 828 tests. Unit and component: state and reducers, criteria arithmetic, the static gate (100%), the launch configuration, traceback parsing, every node, the routers (100% branch), the graph end to end against a mock LLM, the observability surface (§12.1's metric table checked name-by-name against the registry, and every provisioned dashboard query checked against it), redaction, and bearer-token coverage of every mounted route. **Integration**: `tests/integration/test_sandbox_security.py` runs real containers against a real daemon and asserts [§13.1](#131-threat-model)'s T1–T5 and T7 — network denial, filesystem immutability, memory and CPU caps, PID limits, capability drop, wall-clock kill, path traversal. Backend coverage 86% against an 80% gate. No contract or load layers yet, and no frontend tests — there are no pages yet to test ([`AGENTS.md §12`](./AGENTS.md#12-testing-strategy)) |
 
-Defect identifiers **D-001** … **D-009** are catalogued with file, line, and remediation in
+Defect identifiers **D-001** … **D-025** are catalogued with file, line, and remediation in
 [`notes.md` § Known defects](../notes.md#known-defects-in-the-current-tree).

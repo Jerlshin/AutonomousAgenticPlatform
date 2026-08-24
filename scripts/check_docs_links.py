@@ -31,7 +31,7 @@ def headings(text):
 strip_code = lambda t: re.sub(r'```.*?```', '', t, flags=re.S)
 
 FILES = ["README.md", "notes.md",
-         "docs/ARCHITECTURE.md", "docs/AGENTS.md", "docs/MLOPS.md"]
+         "docs/ARCHITECTURE.md", "docs/AGENTS.md", "docs/MLOPS.md", "docs/FRONTEND.md"]
 root = pathlib.Path.cwd()
 
 anchors, dupes = {}, []

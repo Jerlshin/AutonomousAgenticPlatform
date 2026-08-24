@@ -7,7 +7,7 @@ machine-learning experiments — entirely on local, open-source infrastructure.*
 
 `LangGraph` · `Ollama` · `FastAPI` · `PostgreSQL` · `Redis` · `Qdrant` · `MLflow` · `Docker` · `Next.js`
 
-[Architecture](./docs/ARCHITECTURE.md) · [Agents](./docs/AGENTS.md) · [MLOps](./docs/MLOPS.md) · [Decisions](./notes.md)
+[Architecture](./docs/ARCHITECTURE.md) · [Agents](./docs/AGENTS.md) · [MLOps](./docs/MLOPS.md) · [Frontend](./docs/FRONTEND.md) · [Decisions](./notes.md)
 
 </div>
 
@@ -40,22 +40,13 @@ Not a log file and a number — an actual deliverable:
 | 📊 **`metrics.json`** | Schema-validated metrics, params, dataset hash, runtime |
 | 📈 **Plots** | Confusion matrices, ROC curves, learning curves |
 | 🔬 **MLflow run** | Parent run per task, nested child run per attempt, fully tagged |
-| 📦 **`bundle.zip`** | All of the above, one download |
+| 📦 **`bundle.zip`** | Every file above, written to the run's artifact directory |
 
 **Every run produces a deliverable — including failed ones.** A run that never got the code working
 still returns a report explaining what was attempted, what broke, and what was tried. That
 invariant is structural, not aspirational: the graph has exactly one edge into `END`, and it runs
 downstream of the reporting node. The proof is in
 [`AGENTS.md §6.4`](./docs/AGENTS.md#64-termination-proof).
-
----
-
-## Demo
-
-A recorded walkthrough of a full run — plan, research, code, sandbox failure, self-correction,
-MLflow logging, report — lands with [Phase 6](./notes.md#phase-6--real-time-frontend-week-89) as
-`docs/assets/demo.gif`. Until then, `make dev` plus the `curl` walkthrough
-[below](#submit-your-first-task) is the fastest way to see the system work.
 
 ---
 
@@ -123,7 +114,7 @@ graph LR
 | Agent | Model | Does |
 |---|---|---|
 | 🧠 **Planner** | `qwen2.5:14b-instruct` | Decomposes the goal, binds steps to real datasets, and writes the success-criteria contract |
-| 🔎 **Researcher** | `llama3.1:8b` | Hybrid retrieval (dense + BM25, RRF-fused) over docs, verified code exemplars, and episodic run memory. **Extracts verbatim; never generates API signatures.** |
+| 🔎 **Researcher** | `llama3.1:8b` | Hybrid retrieval (dense + sparse, RRF-fused) over docs, verified code exemplars, and episodic run memory. **Extracts verbatim; never generates API signatures.** |
 | ⌨️ **Coder** | `qwen2.5-coder:7b` | Writes one self-contained program obeying the sandbox I/O contract |
 | 📦 **Sandbox** | *none* | Static validation, container launch, live output streaming, deterministic outcome classification |
 | 🐛 **Debugger** | `qwen2.5-coder:7b` | Diagnoses from a structured error record, consults past fixes, issues a targeted fix directive. **Writes no code.** |
@@ -149,8 +140,8 @@ Full node contracts, state schema, prompts, routing tables, and termination proo
 | Vector store | **Qdrant** | Native hybrid search with RRF fusion — essential for retrieving exact API names |
 | Experiment tracking | **MLflow 2.12** | Postgres backend, proxied artifacts, model registry with alias promotion |
 | Execution isolation | **Docker** | Network-less, read-only, non-root, capability-dropped, resource-capped containers |
-| Frontend | **Next.js 15** + TypeScript + Tailwind + shadcn/ui | Real-time dashboard over native WebSocket |
-| Observability | **Prometheus** + **Grafana** + cAdvisor | Run pipeline, LLM performance, sandbox health, retrieval quality |
+| Frontend | **Next.js 15** + React 19 + TypeScript + Tailwind CSS v4 | Real-time dashboard over a native WebSocket — see [`docs/FRONTEND.md`](./docs/FRONTEND.md) |
+| Observability | **Prometheus** + **Grafana** + cAdvisor | Run pipeline, LLM performance, sandbox health, retrieval quality — five provisioned dashboards |
 | CI | **GitHub Actions** | Lint, type-check, test, build, compose smoke test |
 
 100% free, open-source, and locally hostable. No API keys. No cloud account.
@@ -201,18 +192,23 @@ Then open:
 | API docs | http://localhost:8000/docs |
 | MLflow | http://localhost:5001 |
 | Qdrant dashboard | http://localhost:6333/dashboard |
-| Frontend | http://localhost:3000 *(once scaffolded)* |
+| Frontend | http://localhost:3000 (`make fe-install && make fe-dev` — see [`docs/FRONTEND.md`](./docs/FRONTEND.md) for build status) |
 | Grafana | http://localhost:3001 *(with `PROFILE=observability`)* |
 
 ### Submit your first task
 
+`make setup` generates a real `PLATFORM_API_TOKEN` into `.env`, so every endpoint below except
+`/health` needs it as a bearer token ([`ARCHITECTURE.md §13.2`](./docs/ARCHITECTURE.md#132-authentication-and-cors)):
+
 ```bash
-curl -X POST http://localhost:8000/api/v1/tasks \
+export TOKEN=$(grep -oP '(?<=^PLATFORM_API_TOKEN=).*' .env)
+AUTH=(-H "Authorization: Bearer $TOKEN")
+
+curl -X POST http://localhost:8000/api/v1/tasks "${AUTH[@]}" \
   -H 'Content-Type: application/json' \
   -d '{
     "title": "Breast cancer classifier",
-    "prompt": "Build and evaluate a scikit-learn classifier on the bundled breast_cancer dataset. Target at least 95% test accuracy and 0.94 macro F1. Produce a confusion matrix and explain which features drive the decision.",
-    "task_kind": "tabular-classification"
+    "prompt": "Build and evaluate a scikit-learn classifier on the bundled breast_cancer dataset. Target at least 95% test accuracy and 0.94 macro F1. Produce a confusion matrix and explain which features drive the decision."
   }'
 ```
 
@@ -220,14 +216,21 @@ Start a run and stream it:
 
 ```bash
 TASK_ID=<id from above>
-RUN=$(curl -sX POST http://localhost:8000/api/v1/tasks/$TASK_ID/runs -d '{}' -H 'Content-Type: application/json')
+RUN=$(curl -sX POST http://localhost:8000/api/v1/tasks/$TASK_ID/runs "${AUTH[@]}")
 echo "$RUN" | python3 -m json.tool
 
-# Follow it live
-websocat "ws://localhost:8000/api/v1/ws/runs/$(echo $RUN | python3 -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')"
+RUN_ID=$(echo "$RUN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')
+
+# Mint a single-use ticket, then follow the run live (§9 of ARCHITECTURE.md)
+TICKET=$(curl -sX POST http://localhost:8000/api/v1/ws/tickets "${AUTH[@]}" \
+  -H 'Content-Type: application/json' -d "{\"run_id\": \"$RUN_ID\"}" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["ticket"])')
+websocat "ws://localhost:8000/api/v1/ws/runs/$RUN_ID?ticket=$TICKET"
 ```
 
-When it finishes, `GET /api/v1/runs/{run_id}/bundle` returns everything in one zip.
+When it finishes, `GET /api/v1/runs/{run_id}` reports the outcome and token/budget accounting;
+the deliverables themselves — `main.py`, `metrics.json`, plots, `bundle.zip` — land in the run's
+artifact directory and as `Artifact` rows in Postgres.
 
 ---
 
@@ -243,11 +246,14 @@ When it finishes, `GET /api/v1/runs/{run_id}/bundle` returns everything in one z
 | `make up-infra` | Data services only — for running the API natively with `make dev` |
 | `make migrate` | Apply Alembic migrations |
 | `make dev` | Run the API locally with reload |
+| `make worker` | Run the arq worker (also serves `/metrics`) |
+| `make fe-install` / `make fe-dev` | Install and run the Next.js dashboard |
 | `make doctor` | Diagnose the environment: Docker, Python, Ollama, `.env`, containers |
 | `make health` | Query the deep dependency health endpoint |
 | `make logs S=mlflow` | Tail one service |
+| `make bench` | Run the core-10 benchmark suite |
 | `make test` | Run the backend test suite |
-| `make check` | Everything CI runs: lint, typecheck, test |
+| `make check` | Everything CI runs: lint, typecheck, test, docs-link check, dashboard-drift check |
 | `make psql` / `make redis-cli` | Database shells |
 | `make nuke` | Delete all volumes (asks for confirmation) |
 
@@ -278,30 +284,29 @@ autonomous-ai-platform/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # the ASGI entrypoint: app.main:app
-│   │   ├── api/v1/              # health · tasks · runs · artifacts · corpus · websockets
+│   │   ├── api/v1/              # health · tasks · runs · corpus · benchmarks · websockets
 │   │   ├── core/                # config · db · redis · logging · security · metrics
-│   │   ├── db/                  # SQLAlchemy models + repositories
+│   │   ├── db/                  # SQLAlchemy models
 │   │   ├── schemas/             # Pydantic request/response models
 │   │   ├── engine/              # ← the agent system
 │   │   │   ├── graph.py         #   StateGraph assembly + routers
 │   │   │   ├── state.py         #   AgentState channel definitions
-│   │   │   ├── nodes/           #   planner · researcher · coder · sandbox_exec ·
+│   │   │   ├── nodes/           #   init · planner · researcher · coder · sandbox_exec ·
 │   │   │   │                    #   debugger · mlops · evaluator · reporter · finalizer
-│   │   │   ├── prompts/         #   one versioned .md per agent role
-│   │   │   └── tools/           #   qdrant · mlflow · sandbox · datasets
+│   │   │   ├── prompts/         #   one versioned .md per LLM-backed role
+│   │   │   └── tools/           #   qdrant
 │   │   ├── services/            # sandbox driver · vector store · mlflow client · ingestion
 │   │   └── worker/              # arq worker, jobs, cron
 │   ├── alembic/                 # migrations
 │   └── tests/
-├── frontend/                    # Next.js dashboard
+├── frontend/                    # Next.js dashboard — see docs/FRONTEND.md
 ├── infrastructure/
 │   ├── docker-compose.yml
-│   ├── docker/sandbox/          # sandbox images, import allowlist, pinned digests
-│   ├── prometheus/ · grafana/
-│   └── k8s/                     # deferred — see ADR-021
-├── benchmarks/                  # core-10 suite, RAG labelled set, results
-├── scripts/                     # seed_datasets · ingest_corpus · gen_secrets
-├── docs/                        # ARCHITECTURE · AGENTS · MLOPS
+│   ├── docker/sandbox/          # sandbox images, import allowlist
+│   └── observability/           # Prometheus, Grafana dashboards + provisioning
+├── benchmarks/                  # core-10 suite
+├── scripts/                     # generators and CI checks
+├── docs/                        # ARCHITECTURE · AGENTS · MLOPS · FRONTEND
 ├── notes.md                     # ADRs, rejected alternatives, defects, risks, roadmap
 └── Makefile
 ```
@@ -315,36 +320,8 @@ autonomous-ai-platform/
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Service topology, runtime execution model, PostgreSQL schema + DDL, Redis keyspace, Qdrant collections, REST contract, **the full WebSocket protocol**, **sandbox isolation spec**, model routing, observability, security model, configuration reference, failure/recovery matrix |
 | [`docs/AGENTS.md`](./docs/AGENTS.md) | Agent roster and rationale, **complete state schema with reducers**, graph topology, routing predicate tables, the three reflection loops, **termination proof**, per-agent prompts and tool bindings, HITL gates, checkpointing, testing strategy, benchmark suites |
 | [`docs/MLOPS.md`](./docs/MLOPS.md) | MLflow deployment, **the `metrics.json` JSON Schema**, run hierarchy, tag taxonomy, metric vocabulary, artifact structure, model registry and promotion, retention and GC, reproducibility contract |
-| [`notes.md`](./notes.md) | 21 ADRs with tradeoffs, rejected alternatives, **21 catalogued defects in the current tree**, risk register, revised roadmap, open questions |
-
----
-
-## Implementation status
-
-The specification is complete; the implementation is in progress. This table is honest about the
-gap.
-
-| Component | Status |
-|---|---|
-| Config, async DB engine, Alembic | 🟡 Working, needs the fixes in [notes.md § defects](./notes.md#known-defects-in-the-current-tree) |
-| ORM: tasks, logs, artifacts | ✅ Complete |
-| ORM: runs, steps, evaluations, experiments, sandbox executions | ⬜ Specified |
-| API: health, tasks | ✅ Complete |
-| API: runs, artifacts, corpus, benchmarks, WebSocket | ⬜ Specified |
-| Qdrant vector service | 🟡 Working; needs hybrid search, payload indexes, async embedding |
-| LangGraph state, graph, all nodes | ⬜ Specified |
-| Sandbox driver + images | ⬜ Specified |
-| MLflow integration | ⬜ Specified |
-| arq worker | ⬜ Specified |
-| Frontend | ⬜ Not scaffolded |
-| Compose | 🟡 4 of 11 services |
-| CI | 🟡 Lint only |
-
-**Start here:** [Phase 0 — Stabilise](./notes.md#phase-0--stabilise-3-days) fixes the three
-blockers that currently prevent the application from starting at all. Then
-[Phase 1 — Vertical slice](./notes.md#phase-1--vertical-slice-week-12) delivers
-`planner → coder → sandbox → finalizer` end to end, which is the milestone that turns this from a
-specification into a working system.
+| [`docs/FRONTEND.md`](./docs/FRONTEND.md) | The dashboard's remaining implementation plan — project structure, state management, the `useRunStream` hook contract, the four-pane live run view, type generation, build order |
+| [`notes.md`](./notes.md) | Architecture Decision Records with tradeoffs, rejected alternatives, catalogued defects and their fixes, risk register, phase-by-phase delivery history |
 
 ---
 
@@ -390,18 +367,18 @@ MLFLOW_PUBLIC_URL=http://localhost:5001    # from your browser
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `DATABASE_URL uses the 'postgresql://' scheme…` at startup | A sync DSN reaching the async engine | Use `postgresql+asyncpg://`, or unset `DATABASE_URL` and let `POSTGRES_*` compose it — [D-001](./notes.md#known-defects-in-the-current-tree) |
-| LLM calls fail with a DNS error under `make dev` | `OLLAMA_BASE_URL` set to `host.docker.internal`, which does not resolve from the host | Keep the default `http://localhost:11434` for native runs — [D-014](./notes.md#known-defects-in-the-current-tree) |
+| `DATABASE_URL uses the 'postgresql://' scheme…` at startup | A sync DSN reaching the async engine | Use `postgresql+asyncpg://`, or unset `DATABASE_URL` and let `POSTGRES_*` compose it |
+| LLM calls fail with a DNS error under `make dev` | `OLLAMA_BASE_URL` set to `host.docker.internal`, which does not resolve from the host | Keep the default `http://localhost:11434` for native runs |
 | MLflow UI 404s or shows an unrelated page | Hitting host port 5000, which macOS gives to AirPlay Receiver | Use **5001**, or disable AirPlay Receiver in System Settings → General → AirDrop & Handoff |
 | `model not found` from Ollama | Model not pulled | `make pull-models` (or `pull-models-small`) |
 | Ollama is very slow | Running containerised on macOS, so no Metal | Install Ollama natively; this is why it is not in compose |
-| Sandbox: `ImageNotFound` | Sandbox images not built | `make build-sandbox` |
+| Sandbox: `ImageNotFound` | Sandbox images not built | `make build-sandbox` — the exec/train images are still on the roadmap; see [`ARCHITECTURE.md §21`](./docs/ARCHITECTURE.md#21-implementation-status) |
 | Sandbox exits 137 immediately | OOM-killed | Raise `SANDBOX_TRAIN_MEMORY`, or the agent needs a smaller batch size |
-| `Can't locate revision identified by 'eb1aa4f709e4'` | The three old revisions were squashed into `0001_baseline` | `cd backend && alembic stamp 0001_baseline` — [D-011](./notes.md#known-defects-in-the-current-tree) |
 | WebSocket keeps reconnecting | Ticket expired (60 s) or connection quota hit | Re-acquire a ticket; follow the backoff algorithm in [`ARCHITECTURE.md §9.8`](./docs/ARCHITECTURE.md#98-client-reconnection-algorithm-normative) |
 | Postgres connection refused right after `make up` | `make up` returns once containers are *started*; `make migrate` can still beat the first health check | `make ps` until postgres is `healthy`, then `make migrate` |
 
-`make doctor` checks most of these automatically.
+`make doctor` checks most of these automatically. A full defect history with root causes and
+fixes lives in [`notes.md`'s known-defects catalogue](./notes.md#known-defects-in-the-current-tree).
 
 ---
 

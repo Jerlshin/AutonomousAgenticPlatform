@@ -333,19 +333,19 @@ bench-rag: ## [planned] Measure retrieval precision@5
 	@printf "$(C_WARN)RAG benchmark is specified in docs/AGENTS.md §13.1.$(C_OFF)\n"
 
 # ------------------------------------------------------------------------------
-#  Frontend  [planned — see docs/ARCHITECTURE.md §9]
+#  Frontend  — see docs/ARCHITECTURE.md §18 and docs/FRONTEND.md
 # ------------------------------------------------------------------------------
 
 .PHONY: fe-install
-fe-install: ## [planned] Install frontend dependencies
+fe-install: ## Install frontend dependencies
 	@if [ ! -s frontend/package.json ]; then \
-		printf "$(C_WARN)frontend/package.json is empty — the Next.js app is not scaffolded yet.$(C_OFF)\n"; exit 0; \
+		printf "$(C_WARN)frontend/package.json is missing or empty.$(C_OFF)\n"; exit 0; \
 	fi
 	cd frontend && npm install
 
 .PHONY: fe-dev
-fe-dev: ## [planned] Run the Next.js dev server
+fe-dev: ## Run the Next.js dev server
 	@if [ ! -s frontend/package.json ]; then \
-		printf "$(C_WARN)frontend/package.json is empty — the Next.js app is not scaffolded yet.$(C_OFF)\n"; exit 0; \
+		printf "$(C_WARN)frontend/package.json is missing or empty.$(C_OFF)\n"; exit 0; \
 	fi
 	cd frontend && npm run dev

@@ -578,9 +578,10 @@ defects in code that exists — not missing features, which are tracked in
 [`ARCHITECTURE.md §21`](./docs/ARCHITECTURE.md#21-implementation-status).
 
 **Phase 0 closed D-001, D-002, D-003, D-006, D-007, D-008, D-010, D-011, D-012, D-013 and
-D-014; Phase 1 closed D-004.** Each is kept below with a `**Fixed:**` line recording what was
-actually done, because the reasoning is worth more than the checkbox. Still open: D-005, D-009,
-and the Low band.
+D-014; Phase 1 closed D-004; Phase 3 closed D-005 and D-009; Phase 7 closed D-019, D-020 and
+D-021.** Each is kept below with a `**Fixed:**` line recording what was actually done, because the
+reasoning is worth more than the checkbox. Still open: D-015 through D-018, and the new D-024 and
+D-025 found while auditing the tree for this documentation pass.
 
 ### Blockers (critical) — the application cannot currently run
 
@@ -666,6 +667,11 @@ in the process.
 **Fix:** migrate to `query_points` with dense+sparse prefetch and RRF; use
 `aembed_documents`/`aembed_query`, or wrap in `anyio.to_thread.run_sync`. Add payload indexes —
 without them, every filtered query is a full scan.
+**Fixed (Phase 3).** `services/vector_store.py` implements `hybrid_search` on Qdrant-native
+`query_points` with dense+sparse prefetch and RRF fusion, `create_payload_index` for the fields
+`researcher`'s filters use, and `aembed_documents`/`aembed_query` (falling back to
+`anyio.to_thread.run_sync` for embedding backends with no native async path) so an embedding round
+trip no longer blocks the event loop.
 
 **D-013 · Deep health check reports unhealthy dependencies as healthy, and never returns 503**
 `app/api/v1/health.py:69-73`: when MLflow returns a non-200 status, the handler still records
@@ -724,6 +730,10 @@ so the probes use bash's `/dev/tcp` and `python -c "…urlopen…"` respectively
 functions with the same name in one process is a latent registry collision.
 **Fix:** the tool stays in `tools/qdrant_tool.py`; `nodes/researcher.py` implements the node per
 [`AGENTS.md §7.2`](./docs/AGENTS.md#72-researcher-agent).
+**Fixed (Phase 3).** `nodes/researcher.py` is now its own module: it composes hybrid retrieval
+over the corpus, code-exemplar and `run_memory` collections, applies the sufficiency check, and
+calls the `search_knowledge_base` tool rather than reimplementing it. `tools/qdrant_tool.py` is
+the only place `@tool`-decorated Qdrant functions are defined.
 
 **D-011 · Three near-duplicate Alembic revisions**
 `b9cff7b47159` → `8e4ce31ef43e` → `eb1aa4f709e4` all carry the message "Initial schema migration
@@ -764,12 +774,23 @@ via `make gen-env-example`; `make check-env-example` fails on any drift and is w
   guard against that value being used outside `development`.
 - **D-019** · `.github/workflows/docker-build.yml` is an empty file — a workflow that silently does
   nothing. Either implement it or delete it.
+  **Fixed (Phase 7).** Rewritten as a real two-stage workflow — per-image Buildx builds that skip
+  and announce (rather than silently no-op) any Dockerfile that is still empty, then a compose
+  smoke test that brings up the data services, applies migrations, and probes `/health/deep` and
+  `/metrics`. The old empty file is exactly the failure mode its own header comment now documents.
 - **D-020** · Empty placeholder files that are not obviously intentional: `backend/Dockerfile`,
   `backend/requirements.txt`, `backend/pyproject.toml` (the root `pyproject.toml` is the real one),
   `frontend/package.json`, `frontend/tsconfig.json`. Empty `package.json`/`tsconfig.json` break
   `npm install` and `tsc` with confusing parse errors rather than "file not found".
+  **Fixed.** `frontend/package.json` and `frontend/tsconfig.json` were populated once the dashboard
+  scaffold landed (Phase 7). The three backend files were never going to carry real content — the
+  root `pyproject.toml` is and remains the single dependency manifest, and the backend image is
+  built from `infrastructure/docker/` — so this documentation pass deletes them outright rather
+  than filling them in, which is the cleanup a zero-byte file with no real counterpart calls for.
 - **D-021** · `.DS_Store` files are committed at the repo root, `backend/`, and `backend/app/`
   despite being in `.gitignore` — they were added before the ignore rule. `git rm --cached` them.
+  **Fixed.** No longer tracked (`git ls-files | grep -i ds_store` is empty); removed from the index
+  at some point after this defect was catalogued. `.gitignore` already prevents recurrence.
 - **D-022** · **The sandbox never received the program it was supposed to run.** `/workspace` is a
   tmpfs and the only mounts were `/datasets` and `/artifacts`, so `main.py` — written by the driver
   to `/runs/{id}/rev-N/main.py`, one level above the bind-mounted `artifacts/` — was not visible
@@ -789,6 +810,24 @@ via `make gen-env-example`; `make check-env-example` fails on any drift and is w
   already exited never returns, and a program that prints and exits in 50 ms is the common case.
   The capture runs on a dedicated daemon thread rather than `asyncio.to_thread` so a wedged daemon
   connection cannot consume a shared executor worker for the life of the process.
+- **D-024** · **No route serves the deliverable bundle.** `nodes/finalizer.py` writes a real
+  `bundle.zip` to the run's artifact directory and `worker/jobs.py` composes a `bundle_url` string
+  pointing at `GET /api/v1/runs/{run_id}/bundle`, but `api/v1/runs.py` never registers that route
+  and `app/main.py` mounts no `StaticFiles` handler for the artifact tree. The bundle exists on
+  disk and as `Artifact` rows in Postgres; nothing in the API serves it. Found while verifying the
+  README's quickstart curl walkthrough against the live route table for this documentation pass —
+  the README no longer claims this endpoint. **Fix:** add the route (a `FileResponse` over the
+  validated run-scoped path is enough at single-user scope) or drop `bundle_url` from the run
+  payload until it does.
+- **D-025** · **Two frontend Make targets and one generated file disagree with the tree that now
+  exists.** `fe-install` and `fe-dev` still guard on `[ -s frontend/package.json ]` and print
+  "not scaffolded yet" — false since the Phase 7 commit populated it. Separately,
+  `frontend/src/lib/events.generated.ts`'s header says `Regenerate: make gen-event-types`, and
+  `scripts/gen_event_types.py` exists to do exactly that, but no such Make target exists, and
+  `openapi-typescript` is a listed devDependency with no target or generated file exercising it
+  either (`ARCHITECTURE.md §18.5`'s `make fe-types`). **Fix:** wire `fe-types`/`gen-event-types`
+  Make targets to the two generator scripts, and drop the stale guard messages now that scaffolding
+  is real. Tracked as part of the frontend buildout in [`FRONTEND.md`](./docs/FRONTEND.md).
 
 ---
 
@@ -838,12 +877,23 @@ D-004, D-005, D-009 and the Low band.
 
 ### Phase 1 — Vertical slice (week 1–2)
 
+> **Status: complete.**
+
 The narrowest path that produces a real deliverable: `init → planner → coder → sandbox_exec →
 finalizer`. Real Docker sandbox, real `metrics.json`, real artifact rows. No research, no debug
 loop, no MLflow, no frontend. `curl` the API and read the JSON.
 **Exit:** a task prompt produces a `metrics.json` and a downloadable `bundle.zip`. *This is the
 single most important milestone — after it, everything else is improvement rather than
 construction.*
+
+**Delivered.** `init → planner → coder → sandbox_exec → finalizer` runs end to end against a real
+Docker daemon: `services/sandbox.py`'s `DockerSandboxDriver` launches the exact configuration in
+[`ARCHITECTURE.md §10.4`](./docs/ARCHITECTURE.md#104-exact-launch-configuration), and `finalizer.py`
+writes `metrics.json`, the code revision and `bundle.zip` to the run's artifact directory with a
+matching `Artifact` row per file. The one gap against the exit criteria as originally worded:
+`bundle.zip` is produced but not yet *downloadable* — no route serves it (D-024). Everything else
+in the slice, including the debug loop and MLflow logging the phase description says to leave out,
+shipped alongside it once Phases 2–4 landed.
 
 ### Phase 2 — Self-correction (week 3–4)
 
@@ -879,39 +929,97 @@ Three decisions worth recording:
    Two implementations of "did this run succeed" would eventually disagree, and the report
    contradicting the API is the worst possible way to discover it.
 
-Still open from the catalogue: D-005, D-009 and the Low band.
+Still open from the catalogue: the Low band.
 
 ### Phase 3 — Retrieval (week 5)
+
+> **Status: complete.**
 
 Ingestion pipeline, hybrid Qdrant collections, payload indexes, `researcher`, `run_memory`,
 `/corpus/*` endpoints.
 **Exit:** `make bench-rag` reports precision@5 ≥ 0.60; the Debugger demonstrably reuses a prior fix.
 
+**Delivered.** `services/ingestion.py` chunks and hashes documents into the corpus collection;
+`services/vector_store.py` does RRF-fused hybrid search with payload indexes (D-005, fixed above);
+`nodes/researcher.py` is its own module built on `tools/qdrant_tool.py` (D-009, fixed above),
+extracting verbatim rather than generating API signatures, and reading/writing the episodic
+`run_memory` collection the Debugger and Reporter consume. `api/v1/corpus.py` exposes document
+ingest, list, delete and a direct search endpoint for inspecting retrieval quality outside a run.
+`make bench-rag`'s precision@5 measurement itself is still `[planned]` in the Makefile — the
+retrieval path it would measure is built, the benchmark harness for it is not.
+
 ### Phase 4 — MLOps (week 6)
+
+> **Status: complete.**
 
 MLflow on Postgres, `mlops` node, the full tag taxonomy, flavor-aware model logging, registry with
 alias promotion, backfill and GC crons.
 **Exit:** `make reproduce RUN_ID=…` reproduces a logged run's metrics exactly.
 
+**Delivered.** `services/mlflow_client.py` logs the parent/child run hierarchy from
+[`MLOPS.md §4`](./docs/MLOPS.md#4-run-hierarchy-and-naming) against the Postgres-backed tracking
+server ADR-013 specifies, registers models with flavor-aware logging, and promotes them through
+alias-based `set_registered_model_alias` rather than the deprecated stage API. `nodes/mlops.py`
+validates `metrics.json` against the schema before any of that runs. `worker/cron.py` schedules
+`mlflow_backfill` for runs whose logging failed mid-flight. `make reproduce` itself is not yet a
+Make target — the reproducibility contract it would exercise
+([`MLOPS.md §9`](./docs/MLOPS.md#9-reproducibility-contract)) is implemented, the one-command
+wrapper around it is not.
+
 ### Phase 5 — Evaluation and replanning (week 7)
+
+> **Status: complete.**
 
 `evaluator` with deterministic criteria checking plus the advisory rubric, the `REFINE`/`REPLAN`
 loops, the stagnation guard, `benchmark_results`, the `core-10` suite.
 **Exit:** `make bench` produces a scorecard; the three trap cases behave correctly.
 
+**Delivered.** `nodes/evaluator.py` computes every criterion arithmetically against `metrics.json`
+before the advisory LLM rubric ever runs, per ADR-008; `engine/routing.py`'s `route_after_eval`
+turns that into `REFINE`/`REPLAN`/`ACCEPT` without a model in the loop. `services/benchmarks.py`
+and `api/v1/benchmarks.py` run and score suites; `benchmarks/suites/core-10.yaml` is the checked-in
+ten-case set, including the three trap cases R9 calls out. `make bench` runs it end to end.
+
 ### Phase 6 — Real-time frontend (week 8–9)
+
+> **Status: partial — transport and state layer complete; views not started.**
 
 WebSocket endpoint with the full protocol, Redis Streams, ticket auth, resume; the Next.js
 dashboard — run list, live graph view, streaming console, artifact browser, report viewer.
 **Exit:** watching a run live in the browser is more informative than reading the logs; a 60-second
 screen recording of a full run is committed as `docs/assets/demo.gif` and linked from the README.
 
+**Delivered so far.** Everything the exit criteria needs *behind* the screen: `api/v1/websockets.py`
+implements the full [§9](./docs/ARCHITECTURE.md#9-websocket-protocol) protocol — ticket issuance,
+replay from a sequence number, heartbeats, `cancel`/`approve`/`resync` — over `core/redis.py`'s
+Streams, locks and pub/sub control channel. On the client, `frontend/src/lib/useRunStream.ts` and
+`runStore.ts` implement §9.8's reconnection algorithm and the ring-buffered event store exactly as
+specified, and `RunHeader.tsx` is the first component built on top of them. **Not started:** every
+actual page — there is no `page.tsx` anywhere in `frontend/src/app` yet, so `/`, `/tasks`,
+`/runs/[runId]`'s four-pane view, the report viewer and the code diff browser are all unbuilt.
+This is the gap [`docs/FRONTEND.md`](./docs/FRONTEND.md) specs the plan for. The demo recording
+waits on the pages existing.
+
 ### Phase 7 — Observability and hardening (week 10)
+
+> **Status: complete.**
 
 Prometheus, Grafana dashboards, structlog, bearer auth, the `hardened` compose profile, the
 sandbox-escape suite, full CI (lint, test, build, compose smoke).
 **Exit:** `make up PROFILE=observability` gives five working dashboards; CI is green on all five
 stages.
+
+**Delivered.** Five Grafana dashboards (`llm-performance`, `sandbox-health`, `run-pipeline`,
+`retrieval-quality`, `system`) generated by `scripts/gen_dashboards.py` and checked for drift by
+`make check-dashboards`; eight Prometheus alert rules in
+`infrastructure/observability/prometheus/alerts.yml`; `core/logging.py`'s structlog pipeline with
+the redaction processor; `core/security.py`'s bearer auth and single-use WS tickets
+([`ARCHITECTURE.md §13.2`](./docs/ARCHITECTURE.md#132-authentication-and-cors)); and
+`tests/integration/test_sandbox_security.py`'s 14 tests against a real Docker daemon, covering
+T1–T5 and T7 of the [§13.1](./docs/ARCHITECTURE.md#131-threat-model) threat model. `ci.yml` and
+`docker-build.yml` are both real workflows (D-019, fixed above) — lint, type-check, the full test
+suite with an 80% coverage gate, per-image builds, and a compose smoke test that applies migrations
+and probes `/health/deep` and `/metrics` against a live stack.
 
 ### Post-MVP
 
