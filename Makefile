@@ -9,11 +9,15 @@
 # ==============================================================================
 
 SHELL       := /bin/bash
-COMPOSE     := docker compose -f infrastructure/docker-compose.yml
 BACKEND     := backend
 PY          := python3
 PROFILE     ?=
 COMPOSE_ARGS = $(if $(PROFILE),--profile $(PROFILE),)
+# The compose file lives in infrastructure/, so compose would otherwise look for its
+# variables in infrastructure/.env. Point it at the repository-root .env, which is the
+# one `make init-secrets` writes and the backend reads.
+ENV_FILE     = $(if $(wildcard .env),--env-file .env,)
+COMPOSE     := docker compose $(ENV_FILE) -f infrastructure/docker-compose.yml
 
 # Colours
 C_OK   := \033[0;32m
@@ -44,11 +48,20 @@ init-secrets: ## Generate .env from .env.example with fresh secrets
 	@if [ -f .env ]; then \
 		printf "$(C_WARN).env already exists — not overwriting. Delete it first to regenerate.$(C_OFF)\n"; \
 	else \
+		$(PY) scripts/gen_env_example.py; \
 		cp .env.example .env; \
 		$(PY) scripts/gen_secrets.py .env; \
 		chmod 600 .env; \
 		printf "$(C_OK)Wrote .env with generated secrets (mode 0600).$(C_OFF)\n"; \
 	fi
+
+.PHONY: gen-env-example
+gen-env-example: ## Regenerate .env.example from backend/app/core/config.py
+	$(PY) scripts/gen_env_example.py
+
+.PHONY: check-env-example
+check-env-example: ## Fail if .env.example has drifted from Settings
+	$(PY) scripts/gen_env_example.py --check
 
 .PHONY: pull-models
 pull-models: ## Pull the Ollama models this platform routes to
@@ -182,7 +195,7 @@ check-docs: ## Verify every intra-repo documentation link resolves
 	$(PY) scripts/check_docs_links.py
 
 .PHONY: check
-check: lint typecheck test check-docs ## Everything CI runs
+check: lint typecheck test check-docs check-env-example ## Everything CI runs
 
 .PHONY: clean
 clean: ## Remove caches and build detritus

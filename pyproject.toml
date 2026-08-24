@@ -47,7 +47,7 @@ fixable = ["ALL"]
 unfixable = []
 
 # Allow unused variables when prefixed with an underscore
-dummy-variable-accept-regex = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

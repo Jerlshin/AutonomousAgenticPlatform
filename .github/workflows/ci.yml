@@ -27,3 +27,29 @@ jobs:
           cd backend
           ruff check .
           ruff format --check .
+
+  config-contract:
+    # `.env.example` is generated from Settings; this fails the build if the checked-in
+    # copy has drifted from the fields the application actually reads (defect D-012).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install settings dependencies
+        run: pip install "pydantic-settings>=2.3" pytest
+
+      - name: Check .env.example is in sync with Settings
+        run: python scripts/gen_env_example.py --check
+
+      - name: Run configuration regression tests
+        run: |
+          cd backend
+          python -m pytest tests/test_config.py tests/test_alembic_env.py -q
+
+      - name: Check documentation links
+        run: python scripts/check_docs_links.py

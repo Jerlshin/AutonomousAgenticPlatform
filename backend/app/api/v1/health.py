@@ -1,13 +1,32 @@
+"""Health endpoints.
+
+The deep check distinguishes *hard* dependencies (postgres, redis, qdrant — the API
+cannot serve without them) from *soft* ones (mlflow, ollama — a run will fail, but the
+API is up). A hard failure returns HTTP 503 so container orchestration and monitoring
+can act on it; a soft failure returns 200 with `status="degraded"`.
+
+Previously every response was 200 and a non-200 from MLflow was recorded as
+`status="healthy", message="Server reachable"` — defect D-013.
+"""
+
+import asyncio
+import logging
+
 import httpx
 import redis.asyncio as aioredis
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status as http_status
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.schemas.common import DeepHealthResponse, HealthCheckResponse, ServiceStatus
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Per-probe timeout. Probes run concurrently, so this also bounds the whole endpoint.
+PROBE_TIMEOUT_S = 3.0
 
 
 @router.get("", response_model=HealthCheckResponse, summary="Shallow Health Check")
@@ -16,70 +35,106 @@ async def health_check() -> HealthCheckResponse:
     return HealthCheckResponse(status="ok", environment=settings.ENVIRONMENT)
 
 
-@router.get("/deep", response_model=DeepHealthResponse, summary="Deep Dependency Health Check")
-async def deep_health_check() -> DeepHealthResponse:
-    """Pings PostgreSQL, Redis, Qdrant, MLflow, and Ollama to verify container connectivity."""
-    services: dict[str, ServiceStatus] = {}
-    overall_healthy = True
-
-    # 1. PostgreSQL Check
+async def _check_postgres() -> ServiceStatus:
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
-        services["postgres"] = ServiceStatus(status="healthy", message="Connected")
+        return ServiceStatus(status="healthy", message="Connected", required=True)
     except Exception as exc:
-        overall_healthy = False
-        services["postgres"] = ServiceStatus(status="unhealthy", message=str(exc))
+        return ServiceStatus(status="unhealthy", message=str(exc), required=True)
 
-    # 2. Redis Check
+
+async def _check_redis() -> ServiceStatus:
+    client = None
     try:
-        r = aioredis.from_url(settings.REDIS_URL)
-        await r.ping()
-        await r.aclose()
-        services["redis"] = ServiceStatus(status="healthy", message="PONG received")
+        client = aioredis.from_url(settings.REDIS_URL, socket_timeout=PROBE_TIMEOUT_S)
+        await client.ping()
+        return ServiceStatus(status="healthy", message="PONG received", required=True)
     except Exception as exc:
-        overall_healthy = False
-        services["redis"] = ServiceStatus(status="unhealthy", message=str(exc))
+        return ServiceStatus(status="unhealthy", message=str(exc), required=True)
+    finally:
+        if client is not None:
+            await client.aclose()
 
-    # 3. Qdrant Check
+
+async def _check_http(
+    name: str,
+    url: str,
+    *,
+    required: bool,
+    ok_message: str,
+) -> ServiceStatus:
+    """Probe an HTTP dependency, treating any non-200 as unhealthy."""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            res = await client.get(f"{settings.QDRANT_URL}/healthz")
-            if res.status_code == 200:
-                services["qdrant"] = ServiceStatus(status="healthy", message="Cluster ready")
-            else:
-                overall_healthy = False
-                services["qdrant"] = ServiceStatus(status="unhealthy", message=f"HTTP {res.status_code}")
+        async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S) as client:
+            response = await client.get(url)
+        if response.status_code == 200:
+            return ServiceStatus(status="healthy", message=ok_message, required=required)
+        return ServiceStatus(
+            status="unhealthy",
+            message=f"HTTP {response.status_code} from {url}",
+            required=required,
+        )
     except Exception as exc:
-        overall_healthy = False
-        services["qdrant"] = ServiceStatus(status="unhealthy", message=str(exc))
+        logger.debug("Health probe for %s failed: %s", name, exc)
+        return ServiceStatus(status="unhealthy", message=str(exc), required=required)
 
-    # 4. MLflow Check
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            res = await client.get(f"{settings.MLFLOW_TRACKING_URI}/health")
-            if res.status_code == 200:
-                services["mlflow"] = ServiceStatus(status="healthy", message="Tracking server online")
-            else:
-                services["mlflow"] = ServiceStatus(status="healthy", message="Server reachable")
-    except Exception as exc:
-        services["mlflow"] = ServiceStatus(status="unhealthy", message=str(exc))
 
-    # 5. Ollama Check
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            res = await client.get(f"{settings.OLLAMA_BASE_URL}/api/version")
-            if res.status_code == 200:
-                version = res.json().get("version", "unknown")
-                services["ollama"] = ServiceStatus(status="healthy", message=f"Version {version}")
-            else:
-                overall_healthy = False
-                services["ollama"] = ServiceStatus(status="unhealthy", message=f"HTTP {res.status_code}")
-    except Exception as exc:
-        overall_healthy = False
-        services["ollama"] = ServiceStatus(status="unhealthy", message=f"Native host check failed: {exc}")
-
-    return DeepHealthResponse(
-        status="healthy" if overall_healthy else "degraded",
-        services=services,
+async def _check_ollama() -> ServiceStatus:
+    result = await _check_http(
+        "ollama",
+        f"{settings.OLLAMA_BASE_URL}/api/version",
+        required=False,
+        ok_message="Reachable",
     )
+    if result.status == "healthy":
+        # Re-fetch is wasteful; read the version off a second cheap call only on success.
+        try:
+            async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S) as client:
+                version = (await client.get(f"{settings.OLLAMA_BASE_URL}/api/version")).json()
+            result.message = f"Version {version.get('version', 'unknown')}"
+        except Exception:  # noqa: BLE001 — the probe already succeeded; detail is optional
+            pass
+    return result
+
+
+@router.get("/deep", response_model=DeepHealthResponse, summary="Deep Dependency Health Check")
+async def deep_health_check(response: Response) -> DeepHealthResponse:
+    """Pings PostgreSQL, Redis, Qdrant, MLflow, and Ollama concurrently.
+
+    Returns 503 when a hard dependency is down, 200 otherwise — `degraded` if a soft
+    dependency (MLflow, Ollama) is unreachable.
+    """
+    names = ("postgres", "redis", "qdrant", "mlflow", "ollama")
+    results = await asyncio.gather(
+        _check_postgres(),
+        _check_redis(),
+        _check_http(
+            "qdrant",
+            f"{settings.QDRANT_URL}/healthz",
+            required=True,
+            ok_message="Cluster ready",
+        ),
+        _check_http(
+            "mlflow",
+            f"{settings.MLFLOW_TRACKING_URI}/health",
+            required=False,
+            ok_message="Tracking server online",
+        ),
+        _check_ollama(),
+    )
+    services = dict(zip(names, results, strict=True))
+
+    hard_down = [n for n, s in services.items() if s.required and s.status != "healthy"]
+    soft_down = [n for n, s in services.items() if not s.required and s.status != "healthy"]
+
+    if hard_down:
+        overall = "unhealthy"
+        response.status_code = http_status.HTTP_503_SERVICE_UNAVAILABLE
+        logger.warning("Deep health check: hard dependencies down: %s", ", ".join(hard_down))
+    elif soft_down:
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return DeepHealthResponse(status=overall, services=services)

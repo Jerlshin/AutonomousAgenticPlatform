@@ -1,22 +1,38 @@
-# spin up a isolated postgres database container
+# Infrastructure stack for local development (ARCHITECTURE.md §15).
+#
+# Every service declares a health check, and anything with a real dependency waits on
+# `condition: service_healthy` rather than racing it (defect D-008). The api, worker and
+# frontend services are not here yet — Phase 0 runs the API on the host with `make dev`,
+# which is also why the backend's defaults are the localhost forms. Services that do run
+# in this network receive the in-network address as an explicit environment override.
+#
+# Values interpolate from the repository-root .env (the Makefile passes --env-file), with
+# the compose defaults below matching backend/app/core/config.py.
+
+name: pluton
+
 services:
   postgres:
-    image: postgres:16-alpine # downloas the official postgres image built on alphine linux
-    container_name: autonomous_postgres 
+    image: postgres:16-alpine # the official postgres image built on alpine linux
+    container_name: autonomous_postgres
     restart: always
     environment:
-      POSTGRES_DB: agent_platform
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password_dev
+      POSTGRES_DB: ${POSTGRES_DB:-agent_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_dev}
     ports:
-      - "5432:5432" # mpas port inside the container to port on the mac
+      - "5432:5432" # maps the container port to a port on the host
     volumes:
-      - postgres_data:/var/lib/postgresql/data # mounts a persistent docker storage volume to the internal database storage folder
+      - postgres_data:/var/lib/postgresql/data # persistent storage for the cluster
+    networks:
+      - platform_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_platform"]
+      # $$ escapes compose interpolation so the container's shell expands these.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -26,39 +42,86 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - platform_net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 5
-  
+      start_period: 5s
+
   qdrant:
     image: qdrant/qdrant:v1.9.2
     container_name: autonomous_qdrant
     restart: always
     ports:
-      - "6333:6333" # REST API and WebUI - ordinary HTTP (GET, POST, PUT, DELETE)
-      - "6334:6334" # gRPC API - instead of JSON, it sends binary data. Faster.
+      - "6333:6333" # REST API and web dashboard
+      - "6334:6334" # gRPC API — binary, used for bulk ingestion
     volumes:
       - qdrant_data:/qdrant/storage
+    networks:
+      - platform_net
+    healthcheck:
+      # The image ships neither curl nor wget, so the probe speaks HTTP over bash's
+      # /dev/tcp. ARCHITECTURE.md §15.2 documents the intent: GET /readyz must return 200.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/6333; printf "GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; grep -q "200 OK" <&3'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.12.1
+    # Built locally: the upstream image has no PostgreSQL driver (ADR-013).
+    build:
+      context: ./docker/mlflow
+    image: pluton-mlflow:2.12.1
     container_name: autonomous_mlflow
     restart: always
+    environment:
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_dev}
+      MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB:-mlflow}
+      MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+      MLFLOW_WORKERS: "2"
+      MLFLOW_HTTP_REQUEST_TIMEOUT: "120"
+      MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: "false"
     ports:
-      - "5001:5000" # Map host port 5001 to container port 5000
+      - "5001:5000" # host 5001 — macOS AirPlay Receiver claims 5000 (ADR-015)
     volumes:
-      - mlflow_data:/mlflow
-    command: >
-      mlflow server
-      --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root /mlflow/artifacts
-      --host 0.0.0.0
-      --port 5000
+      - mlflow_artifacts:/mlflow/artifacts
+    networks:
+      - platform_net
+    depends_on:
+      postgres:
+        # Without this the server raced Postgres and crash-looped on first boot.
+        condition: service_healthy
+    healthcheck:
+      # No curl in the image either; python is guaranteed to be there.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://localhost:5000/health", timeout=4).status == 200 else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  platform_net:
+    driver: bridge
 
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
-  mlflow_data:
+  mlflow_artifacts:

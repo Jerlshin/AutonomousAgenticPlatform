@@ -577,6 +577,11 @@ Catalogued from a full read of the repository at commit `0109a1a`. Ordered by se
 defects in code that exists — not missing features, which are tracked in
 [`ARCHITECTURE.md §21`](./docs/ARCHITECTURE.md#21-implementation-status).
 
+**Phase 0 closed D-001, D-002, D-003, D-006, D-007, D-008, D-010, D-011, D-012, D-013 and
+D-014; Phase 1 closed D-004.** Each is kept below with a `**Fixed:**` line recording what was
+actually done, because the reasoning is worth more than the checkbox. Still open: D-005, D-009,
+and the Low band.
+
 ### Blockers (critical) — the application cannot currently run
 
 **D-001 · `DATABASE_URL` uses a sync driver and wrong credentials**
@@ -589,12 +594,19 @@ credentials and database name do not match `infrastructure/docker-compose.yml`, 
 **Fix:** use `postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@localhost:5432/agent_platform`,
 and add a `field_validator` on `DATABASE_URL` that rejects any non-`+asyncpg` scheme at startup
 with a message naming the correct form.
+**Fixed (Phase 0).** `DATABASE_URL` has a `field_validator` that rejects any scheme other than
+`postgresql+asyncpg://` and names the correct form in the error; an empty value falls back to the
+DSN composed from `POSTGRES_*`. `.env` no longer carries `ai_user`/`platform_db`: the defaults are
+`postgres` / `agent_platform`, matching compose, and compose reads the same repository-root `.env`
+(`--env-file`) so a rotated `POSTGRES_PASSWORD` cannot desynchronise the two.
 
 **D-010 · `backend/main.py` imports a name that does not exist**
 `backend/main.py:8` does `from app.api.router import api_router`; `app/api/router.py:5` exports
 `api_v1_router`. This module raises `ImportError` on import and has never run. It also duplicates
 `app/main.py` with divergent behaviour.
 **Fix:** delete `backend/main.py` (ADR-014). Point every launcher at `app.main:app`.
+**Fixed (Phase 0).** `backend/main.py` is deleted. `backend/app/main.py` is the sole entrypoint;
+`make dev` already targeted `app.main:app`.
 
 **D-014 · `OLLAMA_BASE_URL` is container-only but `make dev` runs on the host**
 `.env:19` sets `http://host.docker.internal:11434`, which does not resolve from a macOS host
@@ -602,6 +614,10 @@ process. `make dev` runs uvicorn natively, so every LLM call fails with a DNS er
 **Fix:** `.env` for host-side development uses `http://localhost:11434`; compose injects
 `OLLAMA_BASE_URL=http://host.docker.internal:11434` as a service-level environment override.
 Document both in `.env.example`.
+**Fixed (Phase 0).** `OLLAMA_BASE_URL` defaults to `http://localhost:11434`. This generalised into
+a convention: every default is the host-development value, and `docker-compose.yml` injects the
+in-network form per service. `Settings` records that form as field metadata, and the generated
+`.env.example` prints it as a comment beside each affected variable.
 
 ### High — silent data or behaviour corruption
 
@@ -611,6 +627,10 @@ Document both in `.env.example`.
 `alembic revision --autogenerate` emits `DROP TABLE` for all four — destroying every resumable run.
 **Fix:** add the `include_object` filter shown in
 [`ARCHITECTURE.md §7.1`](./docs/ARCHITECTURE.md#71-postgresql-schema) to `alembic/env.py`.
+**Fixed (Phase 0).** `alembic/env.py` defines `LANGGRAPH_TABLES` and an `include_object` filter,
+passed to `context.configure()` in both offline and online modes (along with `compare_type=True`).
+Verified by creating the four tables in a live database and confirming `alembic check` ignores
+them while still detecting an unrelated stray table.
 
 **D-002 · Per-role model settings are silently discarded**
 `.env.example:29-33` defines `PLANNER_MODEL`, `RESEARCHER_MODEL`, `CODER_MODEL`, `DEBUGGER_MODEL`,
@@ -620,6 +640,11 @@ sees no effect and no error. The same applies to `USE_DOCKER_SANDBOX` and `MAX_A
 **Fix:** declare every documented variable in `Settings`
 ([`ARCHITECTURE.md §14`](./docs/ARCHITECTURE.md#14-configuration-reference)), and add a startup
 check that warns on any `PLUTON_`/known-prefix env var not consumed by a field.
+**Fixed (Phase 0).** All 66 documented variables are declared fields, per-role models included;
+`settings.model_for_role("coder")` resolves one with a `DEFAULT_MODEL` fallback, and
+`PLUTON_MODEL_TIER=small` swaps every role still at its standard default for the 3B ladder. Startup
+calls `warn_unconsumed_env()`, which logs a warning for any variable carrying a platform prefix that
+no field consumes.
 
 **D-003 · `MLFLOW_TRACKING_URI` default is wrong in both contexts**
 `config.py` defaults to `http://localhost:5000`. Compose maps MLflow to host `5001`, so host
@@ -627,6 +652,9 @@ callers 404 (and on macOS may hit AirPlay Receiver instead); in-network callers 
 `http://mlflow:5000`.
 **Fix:** default `MLFLOW_TRACKING_URI=http://mlflow:5000`, add `MLFLOW_PUBLIC_URL=http://localhost:5001`
 (ADR-015).
+**Fixed (Phase 0).** `MLFLOW_TRACKING_URI` and `MLFLOW_PUBLIC_URL` are separate fields. Following
+the host-default convention (see D-014), tracking defaults to `http://localhost:5001` and compose
+injects `http://mlflow:5000` for in-network services; the public URL is always the host form.
 
 **D-005 · Qdrant service: deprecated API and a blocked event loop**
 `app/services/vector_store.py` has two problems. `await self.client.search(...)` is deprecated
@@ -646,6 +674,10 @@ The endpoint always returns HTTP 200 regardless of `overall_healthy`, so contain
 and monitoring cannot distinguish healthy from degraded.
 **Fix:** mark non-200 as unhealthy; return 503 when any hard dependency (postgres, redis, qdrant)
 is down. Classify MLflow and Ollama as soft dependencies that degrade rather than fail.
+**Fixed (Phase 0).** Probes run concurrently and are classified: postgres, redis and qdrant are
+hard (any failure returns 503 with `status="unhealthy"`), mlflow and ollama are soft (`degraded`,
+still 200). A non-200 from MLflow is now recorded as unhealthy rather than "Server reachable".
+Verified by stopping Redis: HTTP 503, `redis.status="unhealthy"`, everything else still truthful.
 
 ### Medium
 
@@ -655,6 +687,13 @@ are deprecated in favour of the `langchain-ollama` package and emit `LangChainDe
 the community versions also lack `keep_alive` and the `format` parameter needed for constrained
 JSON decoding (ADR-011).
 **Fix:** `pip install langchain-ollama`; import from `langchain_ollama`.
+**Fixed (Phase 1).** `app/engine/llm.py` imports `ChatOllama` and `OllamaEmbeddings` from
+`langchain_ollama`, passes `keep_alive` and the per-request timeout, and routes model, temperature
+and `num_ctx` per role from a `ROLE_PROFILES` table. The import is deferred into the function
+bodies: the graph is assembled, the state schema validated and the whole test suite run without
+the Ollama stack installed, and a missing package raises a `RuntimeError` naming the install
+command rather than an `ImportError` three frames down. `format` is bound per call by
+`engine/structured.py`, which is where constrained decoding belongs.
 
 **D-007 · CORS wildcard with credentials**
 `app/main.py:44-50` sets `allow_origins=["*"]` together with `allow_credentials=True`. That
@@ -662,6 +701,10 @@ combination is invalid per the CORS specification — browsers reject it — and
 worked.
 **Fix:** an explicit origin allowlist from `settings.CORS_ORIGINS`
 ([`ARCHITECTURE.md §13.2`](./docs/ARCHITECTURE.md#132-authentication-and-cors)).
+**Fixed (Phase 0).** `app/main.py` uses `allow_origins=settings.CORS_ORIGINS` with an explicit
+method and header list and `max_age=600`. Verified: an allowed origin gets its own origin echoed
+back with `allow-credentials: true`; an unknown origin's preflight gets 400 and no
+`access-control-allow-origin` header.
 
 **D-008 · Missing compose health checks and dependency ordering**
 `infrastructure/docker-compose.yml` defines health checks for postgres and redis but not qdrant or
@@ -670,6 +713,10 @@ first boot.
 **Fix:** health checks per
 [`ARCHITECTURE.md §15.2`](./docs/ARCHITECTURE.md#152-startup-ordering), plus
 `depends_on: {condition: service_healthy}`.
+**Fixed (Phase 0).** Qdrant and MLflow have health checks, and MLflow waits on
+`postgres: {condition: service_healthy}` — a real dependency now that its backend store is a
+database on that server (ADR-013) rather than a SQLite file. Neither image ships `curl` or `wget`,
+so the probes use bash's `/dev/tcp` and `python -c "…urlopen…"` respectively.
 
 **D-009 · `researcher.py` is a copy of `qdrant_tool.py`**
 `app/engine/nodes/researcher.py` contains a byte-identical duplicate of
@@ -685,6 +732,11 @@ for tasks logs and artifacts". Only the head appears to have been applied. A fre
 statements, it fails on the second.
 **Fix:** verify against a clean database. If the first two are dead, squash to a single baseline
 revision before any real deployment — this is the last moment when squashing is free.
+**Fixed (Phase 0).** Verified against a clean database: the first two revisions were empty
+`pass` bodies and only the head carried DDL. Squashed to a single `0001_baseline`, regenerated by
+autogenerate so it matches the ORM exactly, with the enum type dropped in `downgrade()` so the
+round trip is repeatable. A database still stamped with an old revision needs
+`alembic stamp 0001_baseline`.
 
 **D-012 · `.env` and `.env.example` have diverged**
 `.env.example` documents `USE_DOCKER_SANDBOX`, `SANDBOX_IMAGE`, `MAX_AGENT_RETRIES`, and the five
@@ -692,6 +744,10 @@ model variables; `.env` omits all of them. Neither matches the fields `Settings`
 Three sources of truth, no agreement.
 **Fix:** `Settings` is the single source of truth; `.env.example` is generated from it by
 `make gen-env-example`, and CI fails if the checked-in file differs.
+**Fixed (Phase 0).** `Settings` is the single source of truth. `scripts/gen_env_example.py`
+renders `.env.example` from its fields — defaults, docstrings, in-network forms and all —
+via `make gen-env-example`; `make check-env-example` fails on any drift and is wired into
+`make check` and CI.
 
 ### Low
 
@@ -746,10 +802,20 @@ with something demonstrable end to end** rather than with a layer that cannot be
 
 ### Phase 0 — Stabilise (3 days)
 
+> **Status: complete.**
+
 Fix D-001, D-010, D-014, D-006, D-002, D-003. Squash the Alembic baseline (D-011). Delete
 `backend/main.py`. Generate `.env.example` from `Settings`.
 **Exit:** `make up && make migrate && make dev` works from a clean clone; `/health/deep` reports
 every dependency truthfully and returns 503 when one is down.
+
+**Delivered.** All of the above, plus D-007, D-008, D-012 and D-013. Verified end to end: the
+stack comes up with every service healthy and MLflow gated on Postgres; `alembic upgrade head`
+applies `0001_baseline` to an empty database and `alembic check` reports no drift; `/health/deep`
+returns 200/`degraded` with Ollama stopped and 503/`unhealthy` with Redis stopped; a task
+round-trips through `POST`/`GET`/`DELETE /api/v1/tasks`. 40 tests in `backend/tests/` pin the
+configuration invariants and the LangGraph autogenerate filter. Still open from the catalogue:
+D-004, D-005, D-009 and the Low band.
 
 ### Phase 1 — Vertical slice (week 1–2)
 
@@ -762,10 +828,39 @@ construction.*
 
 ### Phase 2 — Self-correction (week 3–4)
 
+> **Status: complete.**
+
 Add `debugger`, the `ErrorRecord` pipeline, traceback parsing, the static validator, and the
 correctness loop. Add `reporter` with the deterministic template fallback.
 **Exit:** a deliberately broken prompt produces a run that fails, diagnoses, fixes itself, and
 reports what happened.
+
+**Delivered.** The cycle `coder → sandbox_exec → debugger → coder` with three independent
+bounds — `max_debug_iterations`, `max_sandbox_executions`, and the stagnation rule (three
+consecutive failures sharing one error fingerprint escalate to a replan rather than spending
+the rest of the budget proving the same thing). `reporter` is now `finalizer`'s sole
+predecessor, so the deliverable guarantee holds structurally on every terminal path including
+cancellation and budget exhaustion.
+
+Three decisions worth recording:
+
+1. **The `@node` decorator gained a declared `fallback`.** `DEGRADE` and
+   `SYNTHESISE_FALLBACK` previously meant "the node writes nothing", which for the Debugger
+   would have left `debug_iterations` unmoved and spun the loop against the global visit
+   budget instead of its own. The fallback is now part of the node's declaration rather than
+   a `try` inside its body: a body that handles its own failure can forget to, a declared
+   fallback cannot.
+2. **The Reporter is not trusted with numbers.** §7.8 asks the model not to invent or round a
+   metric; asking is not a control. Sections 5, 6 and 8 and the criteria table are tabulated
+   from state and spliced in after generation, and the model is left the job it is good at —
+   explaining what happened. A report whose accuracy column disagrees with `metrics.json`
+   would be worse than no report.
+3. **`determine_outcome` moved from `finalizer` to `criteria`.** The Reporter has to state
+   the outcome in its first paragraph and the Finalizer has to write it to `runs.final_state`.
+   Two implementations of "did this run succeed" would eventually disagree, and the report
+   contradicting the API is the worst possible way to discover it.
+
+Still open from the catalogue: D-005, D-009 and the Low band.
 
 ### Phase 3 — Retrieval (week 5)
 

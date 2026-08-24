@@ -225,10 +225,11 @@ graph LR
 > - **From inside `platform_net`** (api, worker): `http://mlflow:5000`
 > - **From the host** (browser, `make mlflow-ui`, notebooks): `http://localhost:5001`
 >
-> `MLFLOW_TRACKING_URI` defaults to the in-network form. `MLFLOW_PUBLIC_URL` holds the host form
-> and is used only to build clickable links returned to the frontend. The current
-> `backend/app/core/config.py` default of `http://localhost:5000` is wrong in both contexts and is
-> tracked as defect **D-003** in [`notes.md`](../notes.md#known-defects-in-the-current-tree).
+> `MLFLOW_TRACKING_URI` defaults to the host form, because the processes that read the default
+> (`make dev`, `make migrate`, notebooks) run on the host; compose injects `http://mlflow:5000`
+> into services on `platform_net`. `MLFLOW_PUBLIC_URL` holds the host form unconditionally and is
+> used only to build clickable links returned to the frontend. The former single default of
+> `http://localhost:5000` was wrong in both contexts — defect **D-003**, fixed in Phase 0.
 
 ### 4.2 Docker networks
 
@@ -409,7 +410,7 @@ backend/
 │   ├── schemas/                   # ✅ task, agent, common  ⬜ run, artifact, evaluation, events
 │   ├── engine/
 │   │   ├── state.py               # 🟡 Exists but flat; replaced by AGENTS.md §3 schema
-│   │   ├── graph.py               # ⬜ StateGraph assembly, routers, checkpointer wiring
+│   │   ├── graph.py               # 🟡 StateGraph assembly, routers, checkpointer wiring
 │   │   ├── llm.py                 # 🟡 Works; migrate off deprecated langchain_community
 │   │   ├── routing.py             # ⬜ Per-role model selection + fallback ladder
 │   │   ├── structured.py          # ⬜ JSON-Schema-constrained output + repair ladder
@@ -2015,6 +2016,15 @@ found.
 ## 14. Configuration reference
 
 All settings are `Settings` fields in `app/core/config.py`, sourced from environment or `.env`.
+`.env.example` is generated from that class by `make gen-env-example`; `make check-env-example`
+(run by `make check` and by CI) fails if the checked-in copy has drifted. `Settings` is the single
+source of truth — defect **D-012** was three of them disagreeing.
+
+**Defaults are the host-development values.** `make migrate` and `make dev` run natively on the
+host, so a clean clone with no `.env` at all still resolves to `localhost` and works. Services
+running inside `platform_net` need a different address for the same dependency; that value is in
+the *In-network* column and `infrastructure/docker-compose.yml` injects it as a service-level
+`environment:` override. Where the column is blank, one value serves both.
 
 ### 14.1 Core
 
@@ -2031,43 +2041,52 @@ All settings are `Settings` fields in `app/core/config.py`, sourced from environ
 
 ### 14.2 Datastores
 
-| Variable | Default (in-network) | Notes |
-|---|---|---|
-| `POSTGRES_SERVER` / `_PORT` / `_USER` / `_PASSWORD` / `_DB` | `postgres` / `5432` / `postgres` / *(required)* / `agent_platform` | |
-| `DATABASE_URL` | *(unset)* | **If set, MUST use the `postgresql+asyncpg://` scheme.** A `postgresql://` value raises at startup — defect **D-001**. |
-| `MLFLOW_POSTGRES_DB` | `mlflow` | Separate logical DB, same server |
-| `REDIS_URL` | `redis://redis:6379/0` | Operational DB |
-| `REDIS_CACHE_URL` | `redis://redis:6379/1` | Safe to flush |
-| `QDRANT_URL` | `http://qdrant:6333` | |
-| `QDRANT_PREFER_GRPC` | `true` | gRPC for bulk ingestion |
+| Variable | Default (host) | In-network | Notes |
+|---|---|---|---|
+| `POSTGRES_SERVER` | `localhost` | `postgres` | |
+| `POSTGRES_PORT` / `_USER` / `_PASSWORD` / `_DB` | `5432` / `postgres` / `postgres_password_dev` / `agent_platform` | — | The password is rotated by `make init-secrets`; compose reads the same `.env` |
+| `DATABASE_URL` | *(unset)* | — | **If set, MUST use the `postgresql+asyncpg://` scheme.** A `postgresql://` value raises at startup with the correct form — defect **D-001**, fixed. |
+| `MLFLOW_POSTGRES_DB` | `mlflow` | — | Separate logical DB, same server |
+| `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | Operational DB |
+| `REDIS_CACHE_URL` | `redis://localhost:6379/1` | `redis://redis:6379/1` | Safe to flush |
+| `QDRANT_URL` | `http://localhost:6333` | `http://qdrant:6333` | |
+| `QDRANT_PREFER_GRPC` | `true` | — | gRPC for bulk ingestion |
+| `ARTIFACT_INLINE_MAX_BYTES` | `262144` | — | Above this, artifacts go to the volume or MLflow ([§7.1](#71-postgresql-schema)) |
 
 ### 14.3 Models
 
-| Variable | Default |
-|---|---|
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` |
-| `PLUTON_MODEL_TIER` | `standard` (\| `small`) |
-| `PLANNER_MODEL` | `qwen2.5:14b-instruct` |
-| `RESEARCHER_MODEL` | `llama3.1:8b` |
-| `CODER_MODEL` | `qwen2.5-coder:7b` |
-| `DEBUGGER_MODEL` | `qwen2.5-coder:7b` |
-| `EVALUATOR_MODEL` | `llama3.1:8b` |
-| `REPORTER_MODEL` | `llama3.1:8b` |
-| `EMBEDDING_MODEL` | `nomic-embed-text` |
-| `EMBEDDING_DIM` | `768` |
-| `OLLAMA_KEEP_ALIVE` | `30m` |
-| `OLLAMA_REQUEST_TIMEOUT_S` | `300` |
+| Variable | Default (host) | In-network |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | `http://host.docker.internal:11434` |
+| `PLUTON_MODEL_TIER` | `standard` (\| `small`) | — |
+| `PLANNER_MODEL` | `qwen2.5:14b-instruct` | — |
+| `RESEARCHER_MODEL` | `llama3.1:8b` | — |
+| `CODER_MODEL` | `qwen2.5-coder:7b` | — |
+| `DEBUGGER_MODEL` | `qwen2.5-coder:7b` | — |
+| `EVALUATOR_MODEL` | `llama3.1:8b` | — |
+| `REPORTER_MODEL` | `llama3.1:8b` | — |
+| `DEFAULT_MODEL` | `llama3.1:8b` | — |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | — |
+| `EMBEDDING_DIM` | `768` | — |
+| `OLLAMA_KEEP_ALIVE` | `30m` | — |
+| `OLLAMA_REQUEST_TIMEOUT_S` | `300` | — |
 
-> The current `config.py` declares only `DEFAULT_MODEL` while `.env.example` sets five per-role
-> variables that Pydantic silently discards (`extra="ignore"`). Defect **D-002**.
+> Every per-role variable is a declared field; `settings.model_for_role("coder")` resolves one,
+> falling back to `DEFAULT_MODEL`. `PLUTON_MODEL_TIER=small` swaps each role still sitting at its
+> standard-tier default for the 3B ladder that `make pull-models-small` pulls. `extra="ignore"`
+> still applies to genuinely unknown names, so startup logs a warning for any variable with a
+> platform prefix that no field consumes — this is what defect **D-002** cost when it was silent.
 
 ### 14.4 Sandbox
 
 | Variable | Default |
 |---|---|
 | `SANDBOX_ENABLED` | `true` |
+| `USE_DOCKER_SANDBOX` | `true` |
 | `SANDBOX_RUNTIME` | `runc` (\| `runsc`) |
 | `SANDBOX_DEFAULT_PROFILE` | `exec` |
+| `SANDBOX_IMAGE` | `pluton-sandbox-exec:latest` |
+| `SANDBOX_TRAIN_IMAGE` | `pluton-sandbox-train:latest` |
 | `SANDBOX_EXEC_TIMEOUT_S` | `60` |
 | `SANDBOX_TRAIN_TIMEOUT_S` | `900` |
 | `SANDBOX_EXEC_MEMORY` | `2g` |
@@ -2085,6 +2104,7 @@ All settings are `Settings` fields in `app/core/config.py`, sourced from environ
 | `MAX_REPLANS` | `2` |
 | `MAX_NODE_VISITS` | `60` |
 | `MAX_SANDBOX_EXECUTIONS` | `12` |
+| `MAX_AGENT_RETRIES` | `2` |
 | `RUN_WALLCLOCK_SECONDS` | `1800` |
 | `RUN_MAX_TOKENS` | `250000` |
 | `HITL_GATE_TIMEOUT_S` | `1800` |
@@ -2097,7 +2117,7 @@ All settings are `Settings` fields in `app/core/config.py`, sourced from environ
 | `WORKER_JOB_TIMEOUT_S` | `2400` |
 | `WORKER_HEALTH_PORT` | `8001` |
 | `RUN_LOCK_TTL_S` | `1800` |
-| `MLFLOW_TRACKING_URI` | `http://mlflow:5000` |
+| `MLFLOW_TRACKING_URI` | `http://localhost:5001` — compose injects `http://mlflow:5000` |
 | `MLFLOW_PUBLIC_URL` | `http://localhost:5001` |
 | `MLFLOW_EXPERIMENT_PREFIX` | `pluton` |
 | `MLFLOW_REGISTRY_ENABLED` | `true` |
@@ -2119,9 +2139,10 @@ All settings are `Settings` fields in `app/core/config.py`, sourced from environ
 
 ### 15.2 Startup ordering
 
-`depends_on` with `condition: service_healthy` for postgres, redis, and qdrant. The API additionally
-runs `alembic upgrade head` in an init container (`migrate`) that must exit 0 before `api` and
-`worker` start; this prevents the classic race where two replicas both attempt migrations.
+`depends_on` with `condition: service_healthy` for postgres, redis, and qdrant. Once the `api` and
+`worker` services are containerised, `alembic upgrade head` runs in an init container (`migrate`)
+that must exit 0 before either starts; this prevents the classic race where two replicas both
+attempt migrations.
 
 Health checks:
 
@@ -2129,12 +2150,19 @@ Health checks:
 |---|---|---|
 | postgres | `pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB` | 5 s / 5 s / 5 / 10 s |
 | redis | `redis-cli ping` | 5 s / 3 s / 5 / 5 s |
-| qdrant | `wget -qO- http://localhost:6333/readyz` | 10 s / 5 s / 5 / 15 s |
-| mlflow | `curl -fsS http://localhost:5000/health` | 15 s / 5 s / 5 / 30 s |
+| qdrant | `GET /readyz` must return `200 OK` | 10 s / 5 s / 5 / 15 s |
+| mlflow | `GET :5000/health` must return `200` | 15 s / 5 s / 5 / 30 s |
 | api | `curl -fsS http://localhost:8000/api/v1/health` | 15 s / 5 s / 5 / 20 s |
 | worker | `curl -fsS http://localhost:8001/healthz` | 30 s / 5 s / 3 / 30 s |
 
-The current compose file has no health check on Qdrant and none on MLflow — defect **D-008**.
+> **Probe implementation.** The qdrant and mlflow images ship neither `curl` nor `wget`, so the
+> tests above are expressed with what each image does have: bash's `/dev/tcp` for qdrant, and
+> `python -c "…urllib.request…"` for mlflow. The requirement is the status code, not the tool.
+
+Defect **D-008** — no health check on Qdrant or MLflow and no `depends_on` at all — is fixed.
+`mlflow` now waits on `postgres: {condition: service_healthy}`, which it needs because its backend
+store is a database on that server (ADR-013), not a SQLite file. `api`, `worker` and `frontend` are
+not yet compose services: Phase 0 runs the API on the host with `make dev`.
 
 ### 15.3 k3s path (deferred)
 
@@ -2430,36 +2458,37 @@ says what moved and why.
 
 | Subsystem | Status | Gap to specification |
 |---|---|---|
-| Config (`core/config.py`) | 🟡 Partial | Missing per-role models, budgets, sandbox profiles, CORS, auth; `DATABASE_URL` driver validation (D-001, D-002) |
+| Config (`core/config.py`) | ✅ Complete | Every §14 variable declared; `DATABASE_URL` driver validation; generated `.env.example` (D-001, D-002, D-003, D-012, D-014 fixed) |
 | Async DB engine (`core/db.py`) | ✅ Complete | — |
 | ORM: task/log/artifact | ✅ Complete | Needs additive columns from [§7.1](#71-postgresql-schema) |
 | ORM: run/step/evaluation/experiment/sandbox_execution/corpus | ⬜ Not started | Migrations `0004`, `0005` |
-| Alembic | 🟡 Partial | Needs `include_object` LangGraph exclusion (D-006); three near-duplicate revisions should be squashed |
+| Alembic | ✅ Complete | `include_object` excludes the LangGraph tables (D-006); squashed to one baseline, `0001_baseline` (D-011) |
 | Repositories / CRUD layer | ⬜ Not started | — |
-| API: health | ✅ Complete | Should return 503 on hard-dependency failure |
+| API: health | ✅ Complete | Returns 503 when postgres/redis/qdrant is down, `degraded` for mlflow/ollama (D-013) |
 | API: tasks | ✅ Complete | Add `task_kind`, `tags`, run rollup |
 | API: runs / artifacts / corpus / agents / benchmarks | ⬜ Not started | [§8](#8-rest-api-contract) |
 | API: WebSocket | ⬜ Not started | [§9](#9-websocket-protocol) |
 | Redis layer (`core/redis.py`) | ⬜ Not started | Pool, Streams, locks, caches |
 | Structured logging | ⬜ Not started | [§12.3](#123-structured-logging) |
 | Prometheus metrics | ⬜ Not started | [§12.1](#121-metrics) |
-| LangGraph state schema | 🟡 Partial | Flat TypedDict; superseded by [`AGENTS.md §3`](./AGENTS.md#3-state-schema) |
-| Graph assembly (`engine/graph.py`) | ⬜ Empty file | [`AGENTS.md §4`](./AGENTS.md#4-graph-topology) |
-| Agent nodes (all 9) | ⬜ Empty files | `researcher.py` currently contains a copy of `qdrant_tool.py` (D-009) |
-| Prompts | ⬜ Not started | [`AGENTS.md §7`](./AGENTS.md#7-agent-specifications) |
-| LLM client (`engine/llm.py`) | 🟡 Works | Migrate to `langchain-ollama`; deprecated `langchain_community` imports (D-004) |
-| Structured output / budgets / routing | ⬜ Not started | [§11](#11-model-serving-and-routing) |
+| LangGraph state schema | ✅ Complete | `AgentState` per [`AGENTS.md §3`](./AGENTS.md#3-state-schema): every channel declared, with the `append` / `merge_usage` / `merge_step_status` reducers |
+| Graph assembly (`engine/graph.py`) | 🟡 Partial | The correctness cycle `coder → sandbox_exec → debugger → coder`, its `debugger → planner` escalation, and `reporter → finalizer` as the sole terminal path, compiled with `AsyncPostgresSaver`; researcher, mlops, evaluator, `advance_step` and the HITL gate outstanding ([`AGENTS.md §4`](./AGENTS.md#4-graph-topology)) |
+| Agent nodes (all 9) | 🟡 Partial | `init`, `planner`, `coder` (with revision mode), `sandbox_exec`, `debugger`, `reporter` and `finalizer` implemented behind the `@node` envelope, which now carries the declared-`fallback` hook that makes `DEGRADE` and `SYNTHESISE_FALLBACK` structural; `researcher.py` still contains a copy of `qdrant_tool.py` (D-009); `mlops` and `evaluator` outstanding |
+| Prompts | 🟡 Partial | `engine/prompts/{planner,coder,debugger,reporter}.md`, semver'd front matter, version recorded in state; `researcher` and `evaluator` outstanding ([`AGENTS.md §7`](./AGENTS.md#7-agent-specifications)) |
+| Report construction (`engine/reporting.py`) | ✅ Complete | The eight-section [`AGENTS.md §7.8`](./AGENTS.md#78-reporter-agent) structure: a pure `report_context` projection of state, a Jinja2 template as the `SYNTHESISE_FALLBACK`, and post-generation section checking that splices the data sections in from state so the report cannot contradict `metrics.json` |
+| LLM client (`engine/llm.py`) | ✅ Complete | `langchain-ollama`, lazily imported, per-role model / temperature / `num_ctx` routing (D-004 fixed) |
+| Structured output / budgets / routing | 🟡 Partial | `engine/structured.py` repair ladder (stages 1–3, then raise) and `engine/routing.py` — `route_after_plan/code/exec/debug`, the `@guarded` budget check, the debug and sandbox ceilings and the three-fingerprint stagnation rule — at 100% branch coverage; field-wise extraction and the 80%-budget warning event outstanding |
 | Qdrant service | 🟡 Works | Sync `embed_documents` in async context blocks the loop; `search()` deprecated; no hybrid, no payload indexes (D-005) |
 | Ingestion pipeline | ⬜ Not started | [§7.3.4](#734-chunking-and-retrieval-parameters) |
-| Sandbox driver + images | ⬜ Empty files | [§10](#10-execution-sandbox-specification) |
-| Dataset registry | ⬜ Not started | [§10.8](#108-dataset-registry) |
+| Sandbox driver + images | 🟡 Partial | `DockerSandboxDriver` implements [§10.4](#104-exact-launch-configuration) exactly, plus the [§10.7](#107-static-validation-gate) static gate (100% covered, every table row enforced) and the [§10.9](#109-result-contract) result contract, with stderr parsed into a fingerprinted `ErrorRecord` by `engine/errors.py`; the two images are still empty Dockerfiles |
+| Dataset registry | 🟡 Partial | `services/datasets.py` reads and validates the manifest and binds plan steps to it; `scripts/seed_datasets.py` and the seeded volume are outstanding ([§10.8](#108-dataset-registry)) |
 | MLflow client | ⬜ Not started | [`MLOPS.md`](./MLOPS.md) |
 | arq worker | ⬜ Not started | [§5](#5-runtime-execution-model) |
 | Frontend | ⬜ Empty files | `package.json` and `tsconfig.json` are 0 bytes |
 | Docker Compose | 🟡 Partial | 4 of 11 services; no api/worker/frontend/observability; missing health checks (D-008) |
 | Sandbox Dockerfiles | ⬜ Empty | [§10.10](#1010-sandbox-images) |
 | CI | 🟡 Partial | Lint only; `docker-build.yml` is empty; no tests, build, or compose smoke |
-| Tests | ⬜ Not started | `conftest.py` is empty |
+| Tests | 🟡 Partial | 318 tests: state and reducers, criteria arithmetic, the static gate (100%), the launch configuration, traceback parsing and fingerprinting, the Debugger and Reporter nodes, the Coder's revision mode, the routers (100% branch), and the graph end to end against a mock LLM including the self-correction, budget-exhaustion and stagnation scenarios. No contract, E2E or load layers yet ([`AGENTS.md §12`](./AGENTS.md#12-testing-strategy)) |
 
 Defect identifiers **D-001** … **D-009** are catalogued with file, line, and remediation in
 [`notes.md` § Known defects](../notes.md#known-defects-in-the-current-tree).

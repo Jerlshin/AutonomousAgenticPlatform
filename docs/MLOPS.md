@@ -79,29 +79,28 @@ into the only exact part of the system. See [`AGENTS.md §1.3`](./AGENTS.md#13-w
 
 ```yaml
 mlflow:
-  image: ghcr.io/mlflow/mlflow:v2.12.1
-  container_name: pluton_mlflow
-  restart: unless-stopped
+  build: {context: ./docker/mlflow}     # upstream image has no PostgreSQL driver
+  image: pluton-mlflow:2.12.1
+  container_name: autonomous_mlflow
+  restart: always
   ports:
     - "5001:5000"                       # host 5000 is AirPlay Receiver on macOS
   environment:
+    POSTGRES_SERVER: postgres
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_dev}
+    MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB:-mlflow}
+    MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+    MLFLOW_WORKERS: "2"
     MLFLOW_HTTP_REQUEST_TIMEOUT: "120"
     MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: "false"
-  command: >
-    mlflow server
-      --backend-store-uri postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow
-      --artifacts-destination /mlflow/artifacts
-      --serve-artifacts
-      --host 0.0.0.0
-      --port 5000
-      --workers 2
   volumes:
     - mlflow_artifacts:/mlflow/artifacts
   depends_on:
     postgres:
       condition: service_healthy
-  healthcheck:
-    test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+  healthcheck:                          # no curl in the image; python is always there
+    test: ["CMD", "python", "-c", "…urlopen('http://localhost:5000/health')…"]
     interval: 15s
     timeout: 5s
     retries: 5
@@ -109,9 +108,14 @@ mlflow:
   networks: [platform_net]
 ```
 
+The image is `infrastructure/docker/mlflow/`: the upstream one carries no PostgreSQL driver, so
+`--backend-store-uri postgresql://…` dies at startup with `ModuleNotFoundError`. Its entrypoint
+composes the full `mlflow server` command line — the flags below — from those environment
+variables, so the credentials live in one place.
+
 ### 2.2 Backend store: PostgreSQL, not SQLite
 
-The current `docker-compose.yml` uses `sqlite:////mlflow/mlflow.db`. That is fine for a single
+`docker-compose.yml` used `sqlite:////mlflow/mlflow.db` until Phase 0. That is fine for a single
 sequential user and wrong here, for three concrete reasons:
 
 1. **Concurrent writers.** With `WORKER_MAX_JOBS=2` plus nested child runs, two workers log to
@@ -122,15 +126,23 @@ sequential user and wrong here, for three concrete reasons:
 3. **Operational uniformity.** One database to back up, one to monitor, one connection-pool story.
 
 A separate logical database `mlflow` on the same Postgres server keeps this free of extra
-containers. Created by an init script:
+containers. It is created by the MLflow image's own entrypoint, which checks `pg_database` and
+issues `CREATE DATABASE` only when the row is missing:
 
-```sql
--- infrastructure/postgres/init/01-create-mlflow-db.sql
-SELECT 'CREATE DATABASE mlflow'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'mlflow')\gexec
+```python
+# infrastructure/docker/mlflow/entrypoint.sh
+cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (target,))
+if not cur.fetchone():
+    cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(target)))
 ```
 
-MLflow owns its schema in that database entirely; Alembic never touches it.
+A `/docker-entrypoint-initdb.d` script would have been the obvious home for this, but Postgres runs
+those **only on the first initialisation of its data volume** — an existing volume would never gain
+the database, and the failure would surface as an MLflow crash loop. Doing it in the client that
+needs the database makes the service self-healing on fresh and pre-existing volumes alike.
+
+MLflow owns its schema in that database entirely; Alembic never touches it — and the reverse also
+holds: `alembic/env.py` filters LangGraph's checkpoint tables out of autogeneration ([`ARCHITECTURE.md §7.1`](./ARCHITECTURE.md#71-postgresql-schema)).
 
 ### 2.3 Artifact store: `--serve-artifacts` proxied access
 

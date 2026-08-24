@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pluton.local/schemas/metrics-1.0.json",
+  "title": "Pluton sandbox metrics contract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "task_kind",
+    "framework",
+    "dataset",
+    "metrics"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "task_kind": {
+      "type": "string",
+      "enum": [
+        "tabular-classification",
+        "tabular-regression",
+        "image-classification",
+        "text-classification",
+        "timeseries-forecasting",
+        "clustering",
+        "dimensionality-reduction",
+        "analysis"
+      ]
+    },
+    "framework": {
+      "type": "string",
+      "enum": [
+        "scikit-learn",
+        "pytorch",
+        "lightgbm",
+        "xgboost",
+        "statsmodels",
+        "numpy",
+        "pandas"
+      ]
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "id",
+        "sha256",
+        "n_samples",
+        "seed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Must match an id in /datasets/manifest.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "n_samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "n_features": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "n_classes": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "target": {
+          "type": "string"
+        },
+        "split": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "train": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "validation": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "test": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "strategy": {
+              "type": "string",
+              "examples": [
+                "stratified-holdout-80-20",
+                "stratified-5fold-cv"
+              ]
+            }
+          }
+        },
+        "seed": {
+          "type": "integer"
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "Hyperparameters. Scalars only \u2014 MLflow params are strings.",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ]
+      },
+      "maxProperties": 100
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Final scalar metrics. Keys SHOULD come from the standard vocabulary in MLOPS.md \u00a75.1.",
+      "minProperties": 1,
+      "maxProperties": 100,
+      "additionalProperties": {
+        "type": "number"
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_@:./-]{0,89}$"
+      }
+    },
+    "metric_series": {
+      "type": "object",
+      "description": "Optional per-step curves (loss, accuracy per epoch). Logged with MLflow step indices.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "step",
+            "value"
+          ],
+          "properties": {
+            "step": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        "maxItems": 2000
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "type"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*\\.\\.)[\\w./-]+$",
+            "description": "Relative to /artifacts. No leading slash, no parent traversal."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "model",
+              "plot",
+              "table",
+              "text",
+              "data",
+              "log"
+            ]
+          },
+          "flavor": {
+            "type": "string",
+            "enum": [
+              "sklearn",
+              "pytorch",
+              "lightgbm",
+              "xgboost",
+              "pyfunc"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      }
+    },
+    "plots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!/)(?!.*\\.\\.)[\\w./-]+\\.(png|svg|jpg)$"
+      },
+      "maxItems": 50
+    },
+    "baseline": {
+      "type": "object",
+      "description": "Trivial-baseline comparison. Strongly encouraged: a metric without a baseline is uninterpretable.",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "train_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "infer_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "peak_rss_mb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "python": {
+          "type": "string"
+        },
+        "library_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4000
+    }
+  }
+}

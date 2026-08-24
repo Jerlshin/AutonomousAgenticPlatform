@@ -1,5 +1,7 @@
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
+
 
 # Returns schema for basic health or shallow ping endpoints
 class HealthCheckResponse(BaseModel):
@@ -12,14 +14,17 @@ class HealthCheckResponse(BaseModel):
 class ServiceStatus(BaseModel):
     """Detailed health status for an individual infrastructure service."""
 
-    status: str = Field(..., example="healthy") # status string
-    message: Optional[str] = Field(default=None, example="Connected successfully") # optional error/success message
+    status: str = Field(..., example="healthy") # "healthy" or "unhealthy"
+    message: str | None = Field(default=None, example="Connected successfully") # optional error/success message
+    # Hard dependencies (postgres, redis, qdrant) make /health/deep return 503 when they
+    # fail; soft ones (mlflow, ollama) only degrade it.
+    required: bool = Field(default=True, example=True)
 
 # Aggregate response returned by /api/v1/health/deep.
 class DeepHealthResponse(BaseModel):
     """Deep system status response evaluating all downstream container dependencies."""
 
-    status: str = Field(..., example="healthy")
+    status: str = Field(..., example="healthy") # "healthy" | "degraded" | "unhealthy"
     services: dict[str, ServiceStatus] # It returns the overal platform status alonside a dict of Key-Value mapping each service name to its ServiceStatus
 
 # Unified evelope structure for generic API actions (deletions, cancellations, triggering async events)
@@ -28,4 +33,4 @@ class StandardResponse(BaseModel):
 
     success: bool = True
     message: str
-    data: Optional[dict[str, Any]] = None
+    data: dict[str, Any] | None = None

@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from langchain_core.tools import tool
 
@@ -31,7 +30,9 @@ async def search_knowledge_base(query: str) -> str:
         for idx, res in enumerate(results, 1):
             score = round(res["score"], 3)
             snippet = res["text"].strip()
-            formatted_snippets.append(f"--- Context Result #{idx} (Score: {score}) ---\n{snippet}")
+            formatted_snippets.append(
+                f"--- Context Result #{idx} (Score: {score}) ---\n{snippet}"
+            )
 
         return "\n\n".join(formatted_snippets)
     except Exception as exc:

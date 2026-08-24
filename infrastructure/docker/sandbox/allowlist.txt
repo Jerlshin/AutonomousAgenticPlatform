@@ -1,0 +1,30 @@
+# Import allowlist for agent-generated sandbox programs.
+# Normative source: docs/ARCHITECTURE.md §10.7. Enforced by
+# backend/app/services/validator.py before any container is created.
+#
+# This is a defence-in-depth layer, not the security boundary — the container is the
+# boundary. Its purpose is fast feedback: a rejected import costs 30 ms instead of a
+# 60-second container launch.
+#
+# Blank lines and #-comments are ignored; one module per whitespace-separated token.
+# `os` is additionally restricted by attribute: see ALLOWED_OS_ATTRS in the validator.
+
+# stdlib
+abc argparse ast base64 bisect collections contextlib copy csv dataclasses datetime decimal
+enum functools gzip hashlib heapq io itertools json logging math operator os.path pathlib
+pickle random re shutil statistics string sys tempfile textwrap time typing uuid warnings zipfile
+
+# scientific core
+numpy pandas scipy sklearn joblib
+
+# visualisation
+matplotlib seaborn
+
+# ml frameworks
+torch torchvision lightgbm xgboost statsmodels
+
+# tabular / text helpers
+pyarrow datasets tokenizers
+
+# tracking (train-tracked profile only)
+mlflow

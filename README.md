@@ -350,8 +350,10 @@ specification into a working system.
 
 ## Configuration
 
-Every setting lives in `.env`, generated from `.env.example` by `make init-secrets`. Full reference:
-[`ARCHITECTURE.md §14`](./docs/ARCHITECTURE.md#14-configuration-reference).
+Every setting lives in `.env`, generated from `.env.example` by `make init-secrets`.
+`.env.example` is itself generated from `Settings` by `make gen-env-example`, so the template can
+never drift from the fields the application reads; `make check-env-example` fails if it has. Full
+reference: [`ARCHITECTURE.md §14`](./docs/ARCHITECTURE.md#14-configuration-reference).
 
 The ones that matter most:
 
@@ -361,7 +363,9 @@ PLANNER_MODEL=qwen2.5:14b-instruct
 CODER_MODEL=qwen2.5-coder:7b
 PLUTON_MODEL_TIER=standard          # 'small' swaps in 3B models for <16 GB RAM
 
-# Ollama — localhost when running the API natively, host.docker.internal from containers
+# Ollama — this default is the host form; compose injects host.docker.internal for
+# services running inside the network. The same convention applies to POSTGRES_SERVER,
+# REDIS_URL, QDRANT_URL and MLFLOW_TRACKING_URI.
 OLLAMA_BASE_URL=http://localhost:11434
 
 # Budgets — every loop is bounded
@@ -376,8 +380,8 @@ SANDBOX_TRAIN_MEMORY=6g
 SANDBOX_RUNTIME=runc                # 'runsc' for gVisor on Linux
 
 # MLflow — two URIs, and they are not interchangeable
-MLFLOW_TRACKING_URI=http://mlflow:5000    # from inside the compose network
-MLFLOW_PUBLIC_URL=http://localhost:5001   # from your browser
+MLFLOW_TRACKING_URI=http://localhost:5001  # http://mlflow:5000 inside the network
+MLFLOW_PUBLIC_URL=http://localhost:5001    # from your browser
 ```
 
 ---
@@ -386,16 +390,16 @@ MLFLOW_PUBLIC_URL=http://localhost:5001   # from your browser
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `The asyncio extension requires an async driver` | `DATABASE_URL` uses `postgresql://` | Use `postgresql+asyncpg://` — defect [D-001](./notes.md#known-defects-in-the-current-tree) |
-| LLM calls fail with a DNS error under `make dev` | `.env` has `host.docker.internal`, which does not resolve from the host | Set `OLLAMA_BASE_URL=http://localhost:11434` for native runs — [D-014](./notes.md#known-defects-in-the-current-tree) |
+| `DATABASE_URL uses the 'postgresql://' scheme…` at startup | A sync DSN reaching the async engine | Use `postgresql+asyncpg://`, or unset `DATABASE_URL` and let `POSTGRES_*` compose it — [D-001](./notes.md#known-defects-in-the-current-tree) |
+| LLM calls fail with a DNS error under `make dev` | `OLLAMA_BASE_URL` set to `host.docker.internal`, which does not resolve from the host | Keep the default `http://localhost:11434` for native runs — [D-014](./notes.md#known-defects-in-the-current-tree) |
 | MLflow UI 404s or shows an unrelated page | Hitting host port 5000, which macOS gives to AirPlay Receiver | Use **5001**, or disable AirPlay Receiver in System Settings → General → AirDrop & Handoff |
 | `model not found` from Ollama | Model not pulled | `make pull-models` (or `pull-models-small`) |
 | Ollama is very slow | Running containerised on macOS, so no Metal | Install Ollama natively; this is why it is not in compose |
 | Sandbox: `ImageNotFound` | Sandbox images not built | `make build-sandbox` |
 | Sandbox exits 137 immediately | OOM-killed | Raise `SANDBOX_TRAIN_MEMORY`, or the agent needs a smaller batch size |
-| `alembic upgrade head` fails on a duplicate table | Three near-duplicate revisions in the chain | See defect [D-011](./notes.md#known-defects-in-the-current-tree) |
+| `Can't locate revision identified by 'eb1aa4f709e4'` | The three old revisions were squashed into `0001_baseline` | `cd backend && alembic stamp 0001_baseline` — [D-011](./notes.md#known-defects-in-the-current-tree) |
 | WebSocket keeps reconnecting | Ticket expired (60 s) or connection quota hit | Re-acquire a ticket; follow the backoff algorithm in [`ARCHITECTURE.md §9.8`](./docs/ARCHITECTURE.md#98-client-reconnection-algorithm-normative) |
-| Postgres connection refused after `make up` | Migrations ran before Postgres was healthy | `make migrate` again; the missing `depends_on` is defect [D-008](./notes.md#known-defects-in-the-current-tree) |
+| Postgres connection refused right after `make up` | `make up` returns once containers are *started*; `make migrate` can still beat the first health check | `make ps` until postgres is `healthy`, then `make migrate` |
 
 `make doctor` checks most of these automatically.
 

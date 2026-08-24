@@ -22,6 +22,24 @@ if config.config_file_name:
 # Target metadata registry for autogenerating migrations
 target_metadata = Base.metadata
 
+# Tables created and owned by LangGraph's AsyncPostgresSaver.setup(). They live in the
+# same database but are absent from Base.metadata, so without this filter the next
+# `alembic revision --autogenerate` emits DROP TABLE for all four and destroys every
+# resumable run (defect D-006, ARCHITECTURE.md §7.1).
+LANGGRAPH_TABLES = {
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to) -> bool:
+    """Exclude externally-owned tables from autogeneration."""
+    if type_ == "table" and name in LANGGRAPH_TABLES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode without an active DB connection."""
@@ -31,6 +49,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
+        compare_type=True,
     )
 
     with context.begin_transaction():
@@ -39,7 +59,12 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Helper method to run migrations given a synchronous database connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+        compare_type=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
