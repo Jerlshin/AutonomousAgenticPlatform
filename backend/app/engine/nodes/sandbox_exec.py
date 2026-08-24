@@ -13,16 +13,20 @@ the Debugger chasing a bug that does not exist for the rest of the iteration bud
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 from typing import Any, cast, get_args
 
 from langchain_core.runnables import RunnableConfig
 
+from app.core.config import settings
 from app.engine.errors import (
     error_from_traceback,
     synthetic_error,
     validation_error,
 )
+from app.engine.events import SandboxLineStreamer, current_emitter
 from app.engine.nodes.base import FailurePolicy, get_sandbox, node
 from app.engine.state import (
     AgentState,
@@ -39,8 +43,9 @@ from app.engine.state import (
     StepStatus,
     Usage,
 )
+from app.schemas.events import EventType
 from app.schemas.metrics import check_dataset_binding, check_required_metrics
-from app.services.sandbox import ArtifactRef, SandboxResult
+from app.services.sandbox import ArtifactRef, SandboxResult, profile_for
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,13 @@ async def sandbox_exec_node(
     profile = "train" if step is not None and step.kind is StepKind.TRAIN else "exec"
     driver = get_sandbox(config)
 
+    # Allocated here rather than inside the driver so the `sandbox.started` frame, every
+    # stdout line and the final `sandbox.exit` all carry the same id. A console that could
+    # only correlate its lines with an execution *after* the container exited would have
+    # nothing to attach the live output to.
+    execution_id = uuid.uuid4()
+    streamer = await _announce_launch(execution_id, profile, revision.revision)
+
     result: SandboxResult = await driver.execute(
         run_id=state["run_id"],
         revision=revision.revision,
@@ -70,7 +82,10 @@ async def sandbox_exec_node(
         step_id=step.id if step else None,
         seed=int((state.get("metadata") or {}).get("seed", 42)),
         requirements=revision.requirements,
+        execution_id=execution_id,
+        on_output=streamer,
     )
+    await _announce_exit(streamer, result)
 
     contract_problems = _contract_problems(result, plan, step)
     classification = classify(
@@ -123,6 +138,66 @@ async def sandbox_exec_node(
         )
 
     return update
+
+
+async def _announce_launch(
+    execution_id: uuid.UUID, profile: str, revision: int
+) -> SandboxLineStreamer | None:
+    """Emit `sandbox.started` and build the stdout/stderr streamer, if anyone is watching.
+
+    Returns `None` when there is no emitter, which is also what the driver wants for
+    `on_output` in that case — no callback at all, rather than one that formats lines and
+    throws them away.
+    """
+    emitter = current_emitter()
+    if emitter is None:
+        return None
+
+    prof = profile_for(profile)
+    await emitter.emit(
+        EventType.SANDBOX_STARTED,
+        {
+            "execution_id": str(execution_id),
+            "profile": prof.name,
+            "revision": revision,
+            "image": prof.image,
+            "limits": {
+                "cpus": prof.cpus,
+                "memory": prof.memory,
+                "timeout_s": prof.timeout_s,
+                "network": prof.network_mode,
+            },
+        },
+    )
+    return SandboxLineStreamer(
+        emitter,
+        asyncio.get_running_loop(),
+        execution_id=str(execution_id),
+        max_bytes=settings.SANDBOX_MAX_OUTPUT_BYTES,
+    )
+
+
+async def _announce_exit(
+    streamer: SandboxLineStreamer | None, result: SandboxResult
+) -> None:
+    """Flush the last partial line, then emit `sandbox.exit` with the §9.4 payload."""
+    if streamer is None:
+        return
+    streamer.flush()
+    emitter = current_emitter()
+    if emitter is None:
+        return
+    await emitter.emit(
+        EventType.SANDBOX_EXIT,
+        {
+            "execution_id": str(result.execution_id),
+            "exit_code": result.exit_code,
+            "timed_out": result.timed_out,
+            "oom_killed": result.oom_killed,
+            "duration_ms": result.duration_ms,
+            "max_rss_bytes": result.max_rss_bytes,
+        },
+    )
 
 
 def classify(

@@ -18,6 +18,7 @@ from app.engine.reporting import (
     assemble_report,
     criteria_table,
     debug_cycles,
+    quality_cycles,
     render_report,
     report_context,
     split_sections,
@@ -25,10 +26,12 @@ from app.engine.reporting import (
 from app.engine.state import (
     Budgets,
     CodeRevision,
+    CriterionResult,
     Deliverable,
     Diagnosis,
     ErrorKind,
     ErrorRecord,
+    EvalDecision,
     Plan,
     PlanStep,
     RunOutcome,
@@ -38,8 +41,9 @@ from app.engine.state import (
     SuccessCriterion,
     Usage,
     ValidationReport,
+    Verdict,
 )
-from tests.fakes import CLEAN_METRICS
+from tests.fakes import CLEAN_METRICS, FakeChatModel, run
 
 CRITERIA = [
     SuccessCriterion(
@@ -385,6 +389,144 @@ def _diagnosis(**overrides) -> Diagnosis:
     return Diagnosis(**{**base, **overrides})
 
 
+class TestEpisodicPoints:
+    """`_episodic_points` — which debug cycles are distilled into `run_memory` (§7.8).
+
+    Tested directly against `state`/`context` rather than through the whole node: which
+    cycles qualify is a property of the debug history alone, and conflating it with the
+    reporter's own outcome gate (tested separately in `TestEpisodicMemoryWrite`) would
+    make failures here ambiguous about which rule actually broke.
+    """
+
+    def points(self, state: dict) -> list[dict]:
+        from app.engine.nodes.reporter import _episodic_points
+
+        return _episodic_points(state, report_context(state))
+
+    def test_a_resolved_cycle_is_recorded_with_the_platforms_facts(self):
+        state = succeeded_state(
+            errors=[_error("KeyError:target", 1)],
+            diagnoses=[_diagnosis()],
+            code_revisions=[
+                CodeRevision(revision=1, content="a = 1\n", sha256="1" * 64),
+                CodeRevision(
+                    revision=2,
+                    content="a = 2\n",
+                    sha256="2" * 64,
+                    rationale="read the right column",
+                ),
+            ],
+        )
+        (point,) = self.points(state)
+        assert point["error_fingerprint"] == "KeyError:target"
+        assert point["outcome"] == "SUCCEEDED"
+        assert point["task_kind"] == "tabular-classification"
+        assert point["fix_summary"] == "read the right column"
+        assert point["final_score"] == 0.9737
+
+    def test_the_fix_diff_is_a_real_unified_diff_between_the_two_revisions(self):
+        state = succeeded_state(
+            errors=[_error("KeyError:target", 1)],
+            diagnoses=[_diagnosis()],
+            code_revisions=[
+                CodeRevision(revision=1, content="a = 1\n", sha256="1" * 64),
+                CodeRevision(revision=2, content="a = 2\n", sha256="2" * 64),
+            ],
+        )
+        (point,) = self.points(state)
+        assert "-a = 1" in point["fix_diff"]
+        assert "+a = 2" in point["fix_diff"]
+
+    def test_an_unresolved_cycle_is_not_recorded(self):
+        """A repeat that was later fixed by a *different* diagnosis is not itself
+        evidence the repeat's own fix worked — only the resolved cycle is recorded."""
+        state = succeeded_state(
+            errors=[
+                _error("KeyError:target", 1),
+                _error("KeyError:target", 2),
+                _error("ValueError:shape", 3),
+            ],
+            diagnoses=[_diagnosis(), _diagnosis(), _diagnosis()],
+        )
+        fingerprints = {point["error_fingerprint"] for point in self.points(state)}
+        # Two of the three cycles resolved (the repeat's second occurrence, once the
+        # fingerprint changed; and the final one, since the run ended CLEAN) — the first
+        # occurrence of "KeyError:target" did not, and contributes nothing on its own.
+        assert fingerprints == {"KeyError:target", "ValueError:shape"}
+        assert len(self.points(state)) == 2
+
+    def test_a_partial_run_produces_no_points(self):
+        """`_episodic_points` itself refuses a non-SUCCEEDED context — the reporter's
+        write path does not depend on remembering to check the outcome separately."""
+        metrics = {**CLEAN_METRICS, "metrics": {"accuracy": 0.5}}
+        state = succeeded_state(
+            errors=[_error("KeyError:target", 1)],
+            diagnoses=[_diagnosis()],
+            code_revisions=[
+                CodeRevision(revision=1, content="a = 1\n", sha256="1" * 64),
+                CodeRevision(revision=2, content="a = 2\n", sha256="2" * 64),
+            ],
+            last_outcome=outcome(metrics),
+        )
+        assert self.points(state) == []
+
+    def test_no_debug_cycles_produces_no_points(self):
+        assert self.points(succeeded_state()) == []
+
+
+class TestEpisodicMemoryWrite:
+    """The reporter node's write path: resolution via `get_run_memory_writer`, and the
+    guarantee that a write failure never costs the report."""
+
+    def report(self, state: dict, *, writer=None) -> tuple[dict, list]:
+        from app.engine.nodes.reporter import reporter_node
+
+        calls: list[dict] = []
+
+        async def recording_writer(**kwargs):
+            calls.append(kwargs)
+            return "point-id"
+
+        llm = FakeChatModel(["## 1. Objective\nA short report.\n"])
+        config = {
+            "configurable": {
+                "llm_clients": {"reporter": llm},
+                "run_memory_writer": writer or recording_writer,
+            }
+        }
+        update = run(reporter_node(state, config))
+        return update, calls
+
+    def resolved_state(self, **overrides) -> dict:
+        state = succeeded_state(
+            errors=[_error("KeyError:target", 1)],
+            diagnoses=[_diagnosis()],
+            code_revisions=[
+                CodeRevision(revision=1, content="a = 1\n", sha256="1" * 64),
+                CodeRevision(revision=2, content="a = 2\n", sha256="2" * 64),
+            ],
+        )
+        state.update(overrides)
+        return state
+
+    def test_the_write_is_dispatched_through_the_injected_writer(self):
+        _update, calls = self.report(self.resolved_state())
+        assert len(calls) == 1
+        assert calls[0]["error_fingerprint"] == "KeyError:target"
+
+    def test_a_partial_run_writes_nothing(self):
+        metrics = {**CLEAN_METRICS, "metrics": {"accuracy": 0.5}}
+        _update, calls = self.report(self.resolved_state(last_outcome=outcome(metrics)))
+        assert calls == []
+
+    def test_a_failing_writer_does_not_cost_the_report(self):
+        async def broken_writer(**_kwargs):
+            raise ConnectionError("qdrant is down")
+
+        update, _calls = self.report(self.resolved_state(), writer=broken_writer)
+        assert update["report_markdown"] is not None
+
+
 class TestLastResort:
     """The `SYNTHESISE_FALLBACK` guarantee has no exception clause (§6.5)."""
 
@@ -424,3 +566,98 @@ class TestLastResort:
         context = report_context({"run_id": "abc", "prompt": "x" * 300})
         assert len(context["title"]) == 108
         assert context["title"].endswith("…")
+
+
+def _verdict(decision: EvalDecision, **overrides) -> Verdict:
+    """A verdict that missed `accuracy`, the way the Evaluator writes one."""
+    base = {
+        "decision": decision,
+        "passed": False,
+        "score": 0.43,
+        "criteria_results": [
+            CriterionResult(
+                criterion_id="c1",
+                metric="accuracy",
+                comparator="gte",
+                threshold=0.95,
+                observed=0.9123,
+                passed=False,
+                required=True,
+                weight=2.0,
+            )
+        ],
+        "refine_directive": "accuracy 0.9123 vs. required ≥ 0.95. Add StandardScaler.",
+        "summary": "close, but short on accuracy",
+    }
+    return Verdict(**{**base, **overrides})
+
+
+class TestQualityCycles:
+    """A run that produced a number and was judged insufficient has a story too."""
+
+    def test_each_verdict_that_sent_the_run_back_is_recorded(self):
+        state = succeeded_state(
+            verdicts=[
+                _verdict(EvalDecision.REFINE),
+                _verdict(EvalDecision.ACCEPT, passed=True),
+            ]
+        )
+        (cycle,) = quality_cycles(state)
+        assert cycle["decision"] == "REFINE"
+        assert cycle["shortfall"] == "accuracy 0.9123 vs ≥ 0.95"
+        assert "StandardScaler" in cycle["directive"]
+
+    def test_an_acceptance_is_not_a_cycle(self):
+        """It is the end of them, and it is already the report's headline."""
+        state = succeeded_state(
+            verdicts=[_verdict(EvalDecision.ACCEPT, passed=True, score=1.0)]
+        )
+        assert quality_cycles(state) == []
+
+    def test_a_metric_that_was_never_computed_is_named_as_such(self):
+        verdict = _verdict(EvalDecision.REPLAN)
+        verdict.criteria_results[0].observed = None
+        assert (
+            "not computed"
+            in quality_cycles(succeeded_state(verdicts=[verdict]))[0]["shortfall"]
+        )
+
+    def test_the_rubric_travels_with_the_cycle(self):
+        verdict = _verdict(
+            EvalDecision.REFINE,
+            rubric=[
+                {
+                    "dimension": "methodology",
+                    "score": 3,
+                    "justification": "single split, no CV",
+                }
+            ],
+        )
+        assert quality_cycles(succeeded_state(verdicts=[verdict]))[0]["rubric"] == [
+            "methodology 3/5"
+        ]
+
+    def test_the_template_narrates_the_refinement_in_section_four(self):
+        """Nothing crashed, so section 4 would otherwise claim the run went right first time."""
+        context = report_context(
+            succeeded_state(verdicts=[_verdict(EvalDecision.REFINE)])
+        )
+        section = render_report(context).split("## 4.")[1].split("## 5.")[0]
+        assert "Evaluation 1 — REFINE" in section
+        assert "accuracy 0.9123 vs ≥ 0.95" in section
+        assert "No execution failures occurred" not in section
+
+    def test_a_run_with_neither_kind_of_cycle_still_says_so(self):
+        section = render_report(report_context(succeeded_state())).split("## 4.")[1]
+        assert "No execution failures occurred" in section
+
+    def test_the_reporter_is_told_about_the_refinement_it_has_to_explain(self):
+        from app.engine.nodes.reporter import _failure_block
+
+        context = report_context(
+            succeeded_state(verdicts=[_verdict(EvalDecision.REFINE)])
+        )
+        block = _failure_block(context)
+        assert "Evaluations that sent the run back" in block
+        assert "criteria score 0.43" in block
+        assert "No execution failures occurred" not in block

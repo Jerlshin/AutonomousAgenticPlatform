@@ -33,7 +33,12 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
 from app.engine.errors import consecutive_repeats, error_kind_hint
-from app.engine.nodes.base import FailurePolicy, get_chat_client, node
+from app.engine.nodes.base import (
+    FailurePolicy,
+    get_chat_client,
+    get_run_memory_searcher,
+    node,
+)
 from app.engine.prompts import UNTRUSTED_PREAMBLE, load_prompt, wrap_untrusted
 from app.engine.state import (
     AgentState,
@@ -136,8 +141,7 @@ async def debugger_node(state: AgentState, config: RunnableConfig) -> dict[str, 
     prompt = load_prompt("debugger")
 
     # Episodic memory is queried before the call, not offered as a tool the model may or
-    # may not choose to use (§7.5). Phase 3 supplies the searcher; until then the block is
-    # empty and the Debugger reasons from the traceback alone.
+    # may not choose to use (§7.5).
     prior_art = await _search_run_memory(config, state, error)
 
     system = prompt.render(
@@ -297,18 +301,15 @@ def _prior_art_block(prior_art: list[str]) -> str:
 async def _search_run_memory(
     config: RunnableConfig, state: AgentState, error: ErrorRecord
 ) -> list[str]:
-    """Episodic memory lookup, when a searcher is configured.
+    """Episodic memory lookup, run before the LLM call (§7.5), never as a tool it may
+    decline to use.
 
-    Phase 3 injects one backed by the `run_memory` Qdrant collection. It is deliberately
-    a config-supplied callable rather than an import: the Debugger must remain runnable —
-    and testable — with no vector store, and a retrieval failure must never cost a
-    diagnosis that the traceback alone could have produced.
+    `get_run_memory_searcher` resolves to the real `run_memory` Qdrant collection unless a
+    test has injected a scripted override — the Debugger must remain runnable, and
+    testable, with no vector store, and a retrieval failure must never cost a diagnosis
+    that the traceback alone could have produced.
     """
-    configurable = (config or {}).get("configurable") or {}
-    search = configurable.get("run_memory_search")
-    if search is None:
-        return []
-
+    search = get_run_memory_searcher(config)
     try:
         hits = search(
             fingerprint=error.fingerprint,

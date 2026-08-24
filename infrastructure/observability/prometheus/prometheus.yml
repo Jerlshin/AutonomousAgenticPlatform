@@ -1,0 +1,99 @@
+# Prometheus scrape configuration (ARCHITECTURE.md §12.1).
+#
+# Two of these jobs point at `host.docker.internal` rather than a compose service name,
+# and that is not an oversight. The API and the worker run natively on the host —
+# `make dev` and `make worker` — because Ollama does (ADR-012) and a run that has to cross
+# a container boundary for every token pays for it. Prometheus declares
+# `extra_hosts: host-gateway` in the compose file so the name resolves on Linux too.
+#
+# `scrape_interval` is 15s throughout. Faster buys nothing on a box running two concurrent
+# runs, and every series here is a rate or a histogram over minutes.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    stack: pluton
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  #  Platform
+  # ---------------------------------------------------------------------------
+  - job_name: pluton-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          service: api
+
+  - job_name: pluton-worker
+    # arq has no ASGI surface, so this is a dedicated prometheus_client server on
+    # WORKER_HEALTH_PORT rather than a route (§12.1).
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+        labels:
+          service: worker
+
+  # ---------------------------------------------------------------------------
+  #  Datastores
+  # ---------------------------------------------------------------------------
+  - job_name: qdrant
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["qdrant:6333"]
+        labels:
+          service: qdrant
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  # ---------------------------------------------------------------------------
+  #  Host and containers
+  # ---------------------------------------------------------------------------
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # ---------------------------------------------------------------------------
+  #  Models
+  # ---------------------------------------------------------------------------
+  - job_name: ollama
+    # Ollama only serves /metrics when started with OLLAMA_METRICS=1. Left in the config
+    # unconditionally: a target that is down is visible on the Targets page, which is a
+    # better answer to "why is the tokens/s panel empty?" than no target at all.
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:11434"]
+        labels:
+          service: ollama
+
+  # ---------------------------------------------------------------------------
+  #  GPU  (linux-gpu profile only — see §12.1 on the macOS gap)
+  # ---------------------------------------------------------------------------
+  - job_name: dcgm
+    static_configs:
+      - targets: ["dcgm-exporter:9400"]
+        labels:
+          service: gpu
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

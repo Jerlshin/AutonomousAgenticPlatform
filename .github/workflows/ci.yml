@@ -1,55 +1,221 @@
-# GitHub Actions workflow configuration. It automates CI
+# Stages 1–3 of the pipeline in docs/ARCHITECTURE.md §19. Stages 4–5 — image builds and
+# the compose smoke test — live in docker-build.yml.
+#
+# **LLM interactions are fully mocked here.** No Ollama runs in the runner: the models are
+# gigabytes and GitHub runners have no GPU. `FakeChatModel` returns scripted replies, which
+# means the graph's *control flow* — the part most likely to regress — is tested
+# deterministically and in seconds. Real-model evaluation is `make bench` on a GPU machine.
+#
+# **Sandbox isolation tests do run for real.** GitHub runners have a working Docker daemon,
+# so §10's assertions — network denial, filesystem immutability, memory and CPU caps, PID
+# limits — are verified on every push. They are the tests most worth running automatically,
+# because a regression in sandbox isolation is the highest-severity failure this platform
+# can have.
+
 name: CI Pipeline
 
-# automatically fires this workflow every time code is pushed or pulled
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+# §19.3: a queue of stale builds on a busy branch wastes the free-tier minutes that make
+# this pipeline viable at all.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  # Never let a runner's ambient environment decide what the tests see.
+  ENVIRONMENT: testing
 
 jobs:
+  # ---------------------------------------------------------------------------
+  #  Stage 1 · Lint and format
+  # ---------------------------------------------------------------------------
   backend-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # checks out the repo source code into runner VM so the workflow can access it
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5 # installs and configures python 3.11
-        with:
-          python-version: '3.11'
-          
-      - name: Install Ruff # setup ruff
-        run: pip install ruff
-        
-      - name: Run Ruff Lint & Format Checks # runs the commands
-        run: |
-          cd backend
-          ruff check .
-          ruff format --check .
-
-  config-contract:
-    # `.env.example` is generated from Settings; this fails the build if the checked-in
-    # copy has drifted from the fields the application actually reads (defect D-012).
+    name: 1 · Lint & format (backend)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install Ruff
+        # Pinned to the same lower bound the dev extra declares, so a formatting rule that
+        # changes upstream cannot turn a green branch red without a dependency change.
+        run: pip install "ruff>=0.6"
+
+      - name: ruff check
+        run: cd backend && ruff check .
+
+      - name: ruff format --check
+        run: cd backend && ruff format --check .
+
+  # ---------------------------------------------------------------------------
+  #  Stage 2 · Type check
+  # ---------------------------------------------------------------------------
+  backend-typecheck:
+    name: 2 · Type check (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        # The full install, not just mypy: type-checking against missing packages reports
+        # import errors instead of type errors, which is the same as not running it.
+        run: pip install -e ".[dev]"
+
+      - name: mypy
+        run: cd backend && mypy
+
+  # ---------------------------------------------------------------------------
+  #  Stage 3 · Test
+  # ---------------------------------------------------------------------------
+  backend-test:
+    name: 3 · Test (backend, LLMs mocked)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Pre-pull the sandbox probe image
+        # Pulled here rather than inside the test so a slow registry shows up as a slow
+        # step instead of a flaky assertion.
+        run: docker pull python:3.11-slim
+
+      - name: Unit and integration tests
+        # `-m ""` overrides nothing: both markers run. The sandbox tests skip themselves if
+        # the daemon is unreachable, so this step still passes on a runner without Docker —
+        # the pull above is what makes that situation loud rather than silent.
+        run: |
+          cd backend
+          pytest -q \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=80
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  #  Generated artefacts and documentation
+  # ---------------------------------------------------------------------------
+  contracts:
+    name: Contracts · generated files & docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install settings dependencies
+        # Deliberately minimal: these checks must keep working in a stripped environment,
+        # which is also what proves `Settings` and the generators do not quietly depend on
+        # the rest of the application.
         run: pip install "pydantic-settings>=2.3" pytest
 
-      - name: Check .env.example is in sync with Settings
+      - name: .env.example is in sync with Settings
+        # Defect D-012: three sources of truth for configuration that could diverge.
         run: python scripts/gen_env_example.py --check
 
-      - name: Run configuration regression tests
+      - name: Grafana dashboards are in sync with their generator
+        # A hand-edited dashboard is one nobody can regenerate; §12.2 says "provisioned as
+        # code" and this is what makes that true.
+        run: python scripts/gen_dashboards.py --check
+
+      - name: Configuration regression tests
         run: |
           cd backend
           python -m pytest tests/test_config.py tests/test_alembic_env.py -q
 
-      - name: Check documentation links
+      - name: Documentation links resolve
         run: python scripts/check_docs_links.py
+
+      - name: No secrets in tracked files
+        # §13.3. On a runner there is no .env, so this reports "nothing to check" and
+        # passes — its real value is the pre-commit run on the machine where the secret
+        # is live. It is here so the command cannot rot unnoticed.
+        run: python scripts/check_secrets.py
+
+  # ---------------------------------------------------------------------------
+  #  Frontend  (docs/ARCHITECTURE.md §18)
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: 1–3 · Lint, type check & test (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is the frontend installable yet?
+        id: probe
+        # The app is scaffolded but has neither a committed lockfile nor an ESLint 9 flat
+        # config, so `npm ci` and `eslint .` cannot run reproducibly. Probing rather than
+        # gating outright: the day those two files land, this job starts enforcing without
+        # anyone having to remember to enable it — and until then it says so out loud
+        # instead of passing silently.
+        run: |
+          missing=""
+          [ -f frontend/package-lock.json ] || missing="$missing package-lock.json"
+          ls frontend/eslint.config.* >/dev/null 2>&1 || missing="$missing eslint.config.*"
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Frontend checks skipped::frontend/ is missing:$missing — see ARCHITECTURE.md §19.1"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.probe.outputs.ready == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        if: steps.probe.outputs.ready == 'true'
+        run: cd frontend && npm ci
+
+      - name: eslint
+        if: steps.probe.outputs.ready == 'true'
+        run: cd frontend && npm run lint
+
+      - name: tsc --noEmit
+        if: steps.probe.outputs.ready == 'true'
+        run: cd frontend && npm run typecheck
+
+      - name: Tests
+        if: steps.probe.outputs.ready == 'true'
+        # `--if-present`: the test script lands with the first component test, and a
+        # missing script must not fail a job whose other three steps are green.
+        run: cd frontend && npm test --if-present

@@ -14,10 +14,9 @@ Two rules govern everything in this module:
   fingerprint, the approach is wrong" — reads exactly the history that last-write-wins
   would destroy.
 
-The planning, code, execution, debug, output and control sections are live. The
-research, MLOps and evaluation channels are declared here because the schema is normative
-and later phases fill them in; declaring them up front keeps the checkpoint shape stable
-across phases.
+Every section is live as of phase 5. The channels were declared up front, before the nodes
+that write them existed, because the schema is normative and a checkpoint written by an
+earlier phase has to stay loadable by a later one.
 """
 
 from __future__ import annotations
@@ -543,3 +542,19 @@ def next_pending_step(state: AgentState) -> PlanStep | None:
         if all(status_of(dep) in _SATISFIED for dep in step.depends_on):
             return step
     return None
+
+
+def refine_cycles(verdicts: list[Verdict] | None) -> int:
+    """How many `REFINE` verdicts a run has recorded (AGENTS.md §6.2).
+
+    Loop 2 shares loop 1's `max_debug_iterations` bound, but `debug_iterations` is the
+    Debugger's channel to write (§3.5) — the Evaluator cannot increment it. It counts its
+    own cycles out of the verdict history instead, and this is the one definition of that
+    count, shared by the node that spends the budget and the router that enforces it.
+
+    Callers must be explicit about which side of the current verdict they are on: inside
+    `evaluator_node` the verdict being formed is not in `verdicts` yet, so every REFINE
+    here has already been acted on; inside `route_after_eval` the newest one has not, so
+    the router discounts it.
+    """
+    return sum(1 for v in (verdicts or []) if v.decision is EvalDecision.REFINE)

@@ -6,11 +6,13 @@
 Defining the base.py to establish a central registry for database metadata, and we create individual ORM models (task.py, artifact.py, log.py) to map PostgreSQL relational tables directly into strongly-typed Python objects.
 """
 
-from sqlalchemy.orm import DeclarativeBase # Object Relation Mapper (ORM)
+from sqlalchemy.orm import DeclarativeBase  # Object Relation Mapper (ORM)
+
 
 class Base(DeclarativeBase):
-    """Abstract declarative base class inherited by all ORM entity models. 
-    
+    """Abstract declarative base class inherited by all ORM entity models.
+
     Provides a shared metadata registry for schema generation and Alembic migrations.
     """
+
     pass

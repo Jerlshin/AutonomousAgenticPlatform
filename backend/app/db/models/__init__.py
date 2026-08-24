@@ -6,7 +6,12 @@ target for Alembic migration autogeneration.
 
 from app.db.base import Base
 from app.db.models.artifact import Artifact
+from app.db.models.benchmark_result import BenchmarkResult
+from app.db.models.corpus import CorpusChunk, CorpusDocument
+from app.db.models.evaluation import Evaluation
+from app.db.models.experiment import Experiment
 from app.db.models.log import AgentLog
+from app.db.models.sandbox_execution import SandboxExecution
 from app.db.models.task import Task, TaskStatus
 
 __all__ = [
@@ -15,13 +20,10 @@ __all__ = [
     "TaskStatus",
     "AgentLog",
     "Artifact",
+    "BenchmarkResult",
+    "CorpusDocument",
+    "CorpusChunk",
+    "Evaluation",
+    "Experiment",
+    "SandboxExecution",
 ]
-
-"""
-We have done SQLAlchemy ORM models. The next step is turning those python classes into real postgreSQL tables and building the data access layer.
-
-1. Database Migration with Alembic
-2. Pydantic Schemas
-3. Async Database CRUD Operations
-4. Core FastAPI API routes
-"""

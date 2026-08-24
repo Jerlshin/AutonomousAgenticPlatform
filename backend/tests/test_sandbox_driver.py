@@ -117,7 +117,14 @@ class TestLaunchConfiguration:
         assert mounts["/datasets"]["Type"] == "volume"
         assert mounts["/artifacts"]["ReadOnly"] is False
         assert mounts["/artifacts"]["Type"] == "bind"
-        assert set(mounts) == {"/datasets", "/artifacts"}
+        # The entrypoint is the third mount and it is read-only: `/workspace` is a tmpfs,
+        # so without it `python /workspace/main.py` cannot find the file the driver just
+        # wrote. `/artifacts` remains the only writable mount, which is the property this
+        # test is actually about.
+        assert set(mounts) == {"/datasets", "/artifacts", "/workspace/main.py"}
+        assert mounts["/workspace/main.py"]["ReadOnly"] is True
+        assert mounts["/workspace/main.py"]["Type"] == "bind"
+        assert [t for t, m in mounts.items() if not m["ReadOnly"]] == ["/artifacts"]
 
     def test_the_command_is_fixed_and_isolated(self, created):
         assert created["command"] == ["python", "-I", "-u", "/workspace/main.py"]

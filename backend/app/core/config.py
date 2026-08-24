@@ -137,7 +137,11 @@ class Settings(BaseSettings):
         "127.0.0.1",
         group="Core",
         doc="Bind address. Loopback by default; LAN binding requires PLATFORM_ALLOW_LAN=1.",
-        in_network="0.0.0.0",
+        # S104: this is the *in-network* form, emitted as a comment in .env.example and
+        # applied only inside `platform_net`, where the container's own network namespace
+        # is the boundary. A host process binding it is refused by
+        # `_check_network_exposure` unless PLATFORM_ALLOW_LAN=1 (§13.2).
+        in_network="0.0.0.0",  # noqa: S104
     )
     PORT: int = _f(8000, group="Core", doc="API port.")
     PLATFORM_API_TOKEN: str = _f(
@@ -179,7 +183,9 @@ class Settings(BaseSettings):
         doc="Postgres password. Must match infrastructure/docker-compose.yml.",
         secret=True,
     )
-    POSTGRES_DB: str = _f("agent_platform", group="Datastores", doc="Application database.")
+    POSTGRES_DB: str = _f(
+        "agent_platform", group="Datastores", doc="Application database."
+    )
     MLFLOW_POSTGRES_DB: str = _f(
         "mlflow",
         group="Datastores",
@@ -244,14 +250,20 @@ class Settings(BaseSettings):
     EVALUATOR_MODEL: str = _f("llama3.1:8b", group="Models", doc="Evaluator role.")
     REPORTER_MODEL: str = _f("llama3.1:8b", group="Models", doc="Reporter role.")
     DEFAULT_MODEL: str = _f(
-        "llama3.1:8b", group="Models", doc="Fallback for any role without its own model."
+        "llama3.1:8b",
+        group="Models",
+        doc="Fallback for any role without its own model.",
     )
-    EMBEDDING_MODEL: str = _f("nomic-embed-text", group="Models", doc="Embedding model.")
+    EMBEDDING_MODEL: str = _f(
+        "nomic-embed-text", group="Models", doc="Embedding model."
+    )
     EMBEDDING_DIM: int = _f(
         768, group="Models", doc="Vector width; must match the collection in Qdrant."
     )
     OLLAMA_KEEP_ALIVE: str = _f(
-        "30m", group="Models", doc="How long Ollama keeps a model resident after a call."
+        "30m",
+        group="Models",
+        doc="How long Ollama keeps a model resident after a call.",
     )
     OLLAMA_REQUEST_TIMEOUT_S: int = _f(
         300, group="Models", doc="Per-request timeout for Ollama calls."
@@ -278,12 +290,22 @@ class Settings(BaseSettings):
         "pluton-sandbox-exec:latest", group="Sandbox", doc="Image for the exec profile."
     )
     SANDBOX_TRAIN_IMAGE: str = _f(
-        "pluton-sandbox-train:latest", group="Sandbox", doc="Image for the train profile."
+        "pluton-sandbox-train:latest",
+        group="Sandbox",
+        doc="Image for the train profile.",
     )
-    SANDBOX_EXEC_TIMEOUT_S: int = _f(60, group="Sandbox", doc="Wall clock for exec runs.")
-    SANDBOX_TRAIN_TIMEOUT_S: int = _f(900, group="Sandbox", doc="Wall clock for train runs.")
-    SANDBOX_EXEC_MEMORY: str = _f("2g", group="Sandbox", doc="Memory cap, exec profile.")
-    SANDBOX_TRAIN_MEMORY: str = _f("6g", group="Sandbox", doc="Memory cap, train profile.")
+    SANDBOX_EXEC_TIMEOUT_S: int = _f(
+        60, group="Sandbox", doc="Wall clock for exec runs."
+    )
+    SANDBOX_TRAIN_TIMEOUT_S: int = _f(
+        900, group="Sandbox", doc="Wall clock for train runs."
+    )
+    SANDBOX_EXEC_MEMORY: str = _f(
+        "2g", group="Sandbox", doc="Memory cap, exec profile."
+    )
+    SANDBOX_TRAIN_MEMORY: str = _f(
+        "6g", group="Sandbox", doc="Memory cap, train profile."
+    )
     SANDBOX_MAX_OUTPUT_BYTES: int = _f(
         2097152, group="Sandbox", doc="Captured stdout/stderr ceiling per execution."
     )
@@ -292,7 +314,9 @@ class Settings(BaseSettings):
         group="Sandbox",
         doc="Docker endpoint the sandbox driver talks to.",
     )
-    RUNS_ROOT: str = _f("/runs", group="Sandbox", doc="Mount point of the pluton_runs volume.")
+    RUNS_ROOT: str = _f(
+        "/runs", group="Sandbox", doc="Mount point of the pluton_runs volume."
+    )
     DATASETS_VOLUME: str = _f(
         "pluton_datasets", group="Sandbox", doc="Read-only dataset registry volume."
     )
@@ -311,14 +335,18 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     MAX_DEBUG_ITERATIONS: int = _f(4, group="Graph budgets", doc="Debug loop ceiling.")
     MAX_REPLANS: int = _f(2, group="Graph budgets", doc="Replan ceiling per run.")
-    MAX_NODE_VISITS: int = _f(60, group="Graph budgets", doc="Total node visits per run.")
+    MAX_NODE_VISITS: int = _f(
+        60, group="Graph budgets", doc="Total node visits per run."
+    )
     MAX_SANDBOX_EXECUTIONS: int = _f(
         12, group="Graph budgets", doc="Sandbox executions per run."
     )
     MAX_AGENT_RETRIES: int = _f(
         2, group="Graph budgets", doc="Retries for a single failing agent call."
     )
-    RUN_WALLCLOCK_SECONDS: int = _f(1800, group="Graph budgets", doc="Hard run deadline.")
+    RUN_WALLCLOCK_SECONDS: int = _f(
+        1800, group="Graph budgets", doc="Hard run deadline."
+    )
     RUN_MAX_TOKENS: int = _f(250000, group="Graph budgets", doc="Token budget per run.")
     HITL_GATE_TIMEOUT_S: int = _f(
         1800, group="Graph budgets", doc="How long a human-approval gate waits."
@@ -432,7 +460,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"PLATFORM_API_TOKEN is required when ENVIRONMENT={self.ENVIRONMENT}."
                 )
-            if self.SECRET_KEY == "dev_secret_key_change_in_production":
+            # S105: comparing against the declared default is the check, not a
+            # hardcoded credential — this is the code that refuses to start with it.
+            if self.SECRET_KEY == "dev_secret_key_change_in_production":  # noqa: S105
                 raise ValueError(
                     f"SECRET_KEY still holds its development default while "
                     f"ENVIRONMENT={self.ENVIRONMENT}. Run `make init-secrets`."

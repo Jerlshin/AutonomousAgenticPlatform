@@ -15,17 +15,32 @@ tabulated from state by `assemble_report` and spliced in after generation, so th
 cannot contradict `metrics.json`. What the model is asked for is the part it is genuinely
 better at: explaining to a colleague who did not watch the run what was attempted, what
 broke, and what the result means.
+
+**Episodic memory write** (§7.8, ARCHITECTURE.md §7.3.3): after the report is assembled,
+every debug cycle that was actually resolved — a fingerprint whose next revision ran
+cleaner — is distilled into one `run_memory` point: the fingerprint, a unified diff of the
+fix, and a one-line summary. This only ever happens when `outcome == SUCCEEDED`. Recording
+a "fix" from a run that did not actually succeed would poison the memory with approaches
+that do not work, which is exactly what the Debugger's episodic lookup (§7.5) trusts it not
+to contain. A write failure is logged and swallowed — the report this node exists to
+produce is not allowed to depend on Qdrant being reachable.
 """
 
 from __future__ import annotations
 
+import difflib
 import logging
 from typing import Any
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
-from app.engine.nodes.base import FailurePolicy, get_chat_client, node
+from app.engine.nodes.base import (
+    FailurePolicy,
+    get_chat_client,
+    get_run_memory_writer,
+    node,
+)
 from app.engine.prompts import UNTRUSTED_PREAMBLE, load_prompt, wrap_untrusted
 from app.engine.reporting import (
     assemble_report,
@@ -33,7 +48,7 @@ from app.engine.reporting import (
     render_report,
     report_context,
 )
-from app.engine.state import AgentState, RunPhase
+from app.engine.state import AgentState, CodeRevision, RunPhase
 from app.engine.structured import call_text
 
 logger = logging.getLogger(__name__)
@@ -83,6 +98,8 @@ async def reporter_node(state: AgentState, config: RunnableConfig) -> dict[str, 
         context["status"],
         len(markdown),
     )
+
+    await _write_episodic_memory(config, state, context)
 
     return {
         "report_markdown": markdown,
@@ -168,9 +185,18 @@ def _results_block(context: dict[str, Any]) -> str:
 
 
 def _failure_block(context: dict[str, Any]) -> str:
-    """The debugging narrative, pre-assembled so section 4 cannot omit an attempt."""
+    """The debugging and refinement narrative, pre-assembled so section 4 omits nothing.
+
+    Two kinds of thing go wrong in a run and the report has to account for both: a program
+    that crashed (loop 1) and a program that ran and was not good enough (loop 2). The
+    second leaves no traceback, so a section 4 written only from `errors` would describe a
+    four-revision run as if it had gone right the first time.
+    """
     cycles = context["debug_cycles"]
+    quality = _quality_block(context)
     if not cycles:
+        if quality:
+            return quality
         lines = [
             "### Failures",
             "",
@@ -202,6 +228,38 @@ def _failure_block(context: dict[str, Any]) -> str:
         "Write one subsection per attempt above. Do not omit any, including the ones that "
         "did not work."
     )
+    if quality:
+        lines += ["", quality]
+    return "\n".join(lines)
+
+
+def _quality_block(context: dict[str, Any]) -> str:
+    """Evaluations that sent the run back around, with the gap that motivated each.
+
+    The numbers are the Evaluator's arithmetic, not the model's recollection of it: the
+    whole point of tabulating section 4 rather than describing it is that a report cannot
+    quietly disagree with `metrics.json`.
+    """
+    cycles = context["quality_cycles"]
+    if not cycles:
+        return ""
+
+    lines = ["### Evaluations that sent the run back", ""]
+    for cycle in cycles:
+        lines += [
+            f"**Evaluation {cycle['n']} — {cycle['decision']} "
+            f"(criteria score {cycle['score']})**",
+            f"- Fell short: {cycle['shortfall'] or cycle['summary']}",
+            f"- What was done about it: {cycle['directive']}",
+        ]
+        if cycle["rubric"]:
+            lines.append("- Quality rubric: " + ", ".join(cycle["rubric"]))
+        lines.append("")
+    lines.append(
+        "Explain each of these in section 4 too. A run that produced a number, was judged "
+        "insufficient and tried again has a story the reader needs, even though nothing "
+        "crashed."
+    )
     return "\n".join(lines)
 
 
@@ -212,6 +270,92 @@ def _artifacts_block(context: dict[str, Any]) -> str:
         f"- `{a['name']}` ({a['type']}, {a['size']})" for a in context["artifacts"]
     )
     return f"### Artifacts\n\n{listing}\n\nThe artifact table is appended for you."
+
+
+async def _write_episodic_memory(
+    config: RunnableConfig, state: AgentState, context: dict[str, Any]
+) -> None:
+    """Distil every resolved debug cycle into `run_memory`, on `SUCCEEDED` runs only."""
+    if context["status"] != "SUCCEEDED":
+        return
+
+    writer = get_run_memory_writer(config)
+    for point in _episodic_points(state, context):
+        try:
+            result = writer(**point)
+            if hasattr(result, "__await__"):
+                await result
+        except Exception as exc:  # noqa: BLE001 - a write failure must not cost the report
+            logger.warning(
+                "Failed to write run_memory point for %s: %s",
+                point["error_fingerprint"],
+                exc,
+            )
+
+
+def _episodic_points(
+    state: AgentState, context: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """One `run_memory` point per debug cycle the next revision actually resolved.
+
+    Refuses a non-`SUCCEEDED` context itself, rather than trusting every caller to check
+    first — the whole reason this gate exists is that a "fix" from a run that did not
+    actually succeed would poison the memory with approaches that do not work.
+    """
+    if context["status"] != "SUCCEEDED":
+        return []
+
+    revisions = {r.revision: r for r in state.get("code_revisions") or []}
+    cycles = context["debug_cycles"]
+    points: list[dict[str, Any]] = []
+    for cycle in cycles:
+        if not cycle["resolved"]:
+            continue
+        before = revisions.get(cycle["revision"])
+        after = revisions.get(cycle["fix_revision"]) if cycle["fix_revision"] else None
+        summary = (
+            cycle["fix_rationale"]
+            or cycle["fix_strategy"]
+            or "Fix applied; no summary was recorded."
+        )
+        points.append(
+            {
+                "run_id": context["run_id"],
+                "task_kind": context["task_kind"],
+                "outcome": context["status"],
+                "error_fingerprint": cycle["fingerprint"],
+                "error_excerpt": cycle["message"],
+                "fix_summary": summary,
+                "fix_diff": _unified_diff(before, after),
+                "debug_iterations": len(cycles),
+                "final_score": _final_score(context),
+            }
+        )
+    return points
+
+
+def _unified_diff(before: CodeRevision | None, after: CodeRevision | None) -> str:
+    if before is None or after is None:
+        return ""
+    diff = difflib.unified_diff(
+        before.content.splitlines(keepends=True),
+        after.content.splitlines(keepends=True),
+        fromfile=f"rev-{before.revision:03d}/main.py",
+        tofile=f"rev-{after.revision:03d}/main.py",
+    )
+    # Budgeted, not maximal (principle P6): a diff is evidence for a future Debugger
+    # prompt, not the whole program a second time.
+    return "".join(diff)[:8000]
+
+
+def _final_score(context: dict[str, Any]) -> float:
+    primary = context.get("primary_metric")
+    value = (context.get("metrics") or {}).get(primary) if primary else None
+    return (
+        float(value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else 0.0
+    )
 
 
 __all__ = ["fallback_report", "reporter_node"]

@@ -1,6 +1,7 @@
 # sets up your postresql database connection engine using SQLAlchemy 2.0 ans asyncpg. it handles connection pooling, async session creation, FastAPI request injection, and health-checks.
 import logging
 from collections.abc import AsyncGenerator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -15,8 +16,10 @@ logger = logging.getLogger(__name__)
 
 # Create the async engine targeting PostgreSQL using the asyncpg driver
 engine: AsyncEngine = create_async_engine(
-    settings.async_database_url, # reads postgres connection string from the settings
-    echo=(settings.LOG_LEVEL.upper() == "DEBUG"), # automatically prints raw DQL queries to the console if you rlog level is set to DEBUG
+    settings.async_database_url,  # reads postgres connection string from the settings
+    echo=(
+        settings.LOG_LEVEL.upper() == "DEBUG"
+    ),  # automatically prints raw DQL queries to the console if you rlog level is set to DEBUG
     future=True,
     pool_pre_ping=True,  # Verifies connection validity before retrieving from pool
     pool_size=10,

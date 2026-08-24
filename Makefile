@@ -164,6 +164,10 @@ redis-cli: ## Open a redis-cli shell
 dev: ## Run the API locally with reload
 	cd $(BACKEND) && uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
+.PHONY: worker
+worker: ## Run the arq worker (also serves /metrics on WORKER_HEALTH_PORT)
+	cd $(BACKEND) && arq app.worker.main.WorkerSettings
+
 .PHONY: install
 install: ## Install backend dependencies into the active environment
 	$(PY) -m pip install -e ".[dev]"
@@ -186,6 +190,14 @@ typecheck: ## Static type check
 test: ## Run the backend test suite
 	cd $(BACKEND) && pytest -q
 
+.PHONY: test-unit
+test-unit: ## Run everything that needs no Docker daemon
+	cd $(BACKEND) && pytest -q -m "not integration"
+
+.PHONY: test-integration
+test-integration: ## Sandbox isolation tests — needs a live Docker daemon
+	cd $(BACKEND) && pytest -q -m integration tests/integration
+
 .PHONY: test-cov
 test-cov: ## Run tests with a coverage report
 	cd $(BACKEND) && pytest --cov=app --cov-report=term-missing --cov-report=html
@@ -194,8 +206,20 @@ test-cov: ## Run tests with a coverage report
 check-docs: ## Verify every intra-repo documentation link resolves
 	$(PY) scripts/check_docs_links.py
 
+.PHONY: gen-dashboards
+gen-dashboards: ## Regenerate the Grafana dashboards from scripts/gen_dashboards.py
+	$(PY) scripts/gen_dashboards.py
+
+.PHONY: check-dashboards
+check-dashboards: ## Fail if the provisioned dashboards have drifted from their generator
+	$(PY) scripts/gen_dashboards.py --check
+
+.PHONY: check-secrets
+check-secrets: ## Fail if a generated secret has leaked into a tracked file (§13.3)
+	@$(PY) scripts/check_secrets.py
+
 .PHONY: check
-check: lint typecheck test check-docs check-env-example ## Everything CI runs
+check: lint typecheck test check-docs check-env-example check-dashboards check-secrets ## Everything CI runs
 
 .PHONY: clean
 clean: ## Remove caches and build detritus
@@ -243,6 +267,41 @@ prune-runs: ## [planned] Sweep expired run scratch directories
 	@printf "$(C_WARN)Run-volume sweep is specified in docs/MLOPS.md §8.4.$(C_OFF)\n"
 
 # ------------------------------------------------------------------------------
+#  Observability  (docs/ARCHITECTURE.md §12)
+# ------------------------------------------------------------------------------
+
+.PHONY: up-observability
+up-observability: ## Start Prometheus, Grafana and the exporters
+	$(COMPOSE) --profile observability up -d
+	@printf "$(C_OK)Grafana: http://localhost:3001  ·  Prometheus: http://localhost:9090$(C_OFF)\n"
+	@printf "  Grafana user 'admin'; password is GRAFANA_ADMIN_PASSWORD in .env.\n"
+
+.PHONY: grafana
+grafana: ## Open Grafana (host port 3001 — 3000 belongs to the frontend)
+	@printf "Grafana: http://localhost:3001\n"
+	@command -v open >/dev/null 2>&1 && open http://localhost:3001 || true
+
+.PHONY: prometheus
+prometheus: ## Open the Prometheus UI
+	@printf "Prometheus: http://localhost:9090\n"
+	@command -v open >/dev/null 2>&1 && open http://localhost:9090 || true
+
+.PHONY: metrics
+metrics: ## Show the platform metrics the API and the worker are currently exposing
+	@printf "$(C_HDR)API (:8000)$(C_OFF)\n"
+	@curl -fsS http://localhost:8000/metrics 2>/dev/null | grep -E '^pluton_' | grep -v '^#' \
+		|| printf "$(C_WARN)  API unreachable on :8000 — is it running? (make dev)$(C_OFF)\n"
+	@printf "$(C_HDR)Worker (:8001)$(C_OFF)\n"
+	@curl -fsS http://localhost:8001/metrics 2>/dev/null | grep -E '^pluton_' | grep -v '^#' \
+		|| printf "$(C_WARN)  Worker unreachable on :8001 — is it running? (make worker)$(C_OFF)\n"
+
+.PHONY: scrape-targets
+scrape-targets: ## Show which Prometheus scrape targets are up
+	@curl -fsS http://localhost:9090/api/v1/targets 2>/dev/null \
+		| $(PY) -c 'import json,sys; [print(f"{t[\"labels\"][\"job\"]:<16} {t[\"health\"]:<8} {t[\"scrapeUrl\"]}") for t in json.load(sys.stdin)["data"]["activeTargets"]]' \
+		|| printf "$(C_WARN)Prometheus unreachable on :9090 — make up-observability$(C_OFF)\n"
+
+# ------------------------------------------------------------------------------
 #  MLOps
 # ------------------------------------------------------------------------------
 
@@ -260,8 +319,14 @@ storage-report: ## Report volume usage
 # ------------------------------------------------------------------------------
 
 .PHONY: bench
-bench: ## [planned] Run the core-10 benchmark suite
-	@printf "$(C_WARN)Benchmark suites are specified in docs/AGENTS.md §13.$(C_OFF)\n"
+bench: ## Run the core-10 benchmark suite (needs Ollama, Docker and Postgres)
+	@printf "$(C_INFO)Running core-10. Ten full graph runs — expect 40-80 minutes.$(C_OFF)\n"
+	cd $(BACKEND) && python -m app.services.benchmarks core-10
+
+.PHONY: bench-case
+bench-case: ## Run one benchmark case: make bench-case CASE=bc-logreg
+	@if [ -z "$(CASE)" ]; then printf "$(C_WARN)Set CASE, e.g. make bench-case CASE=bc-logreg$(C_OFF)\n"; exit 1; fi
+	cd $(BACKEND) && python -m app.services.benchmarks core-10 --case $(CASE)
 
 .PHONY: bench-rag
 bench-rag: ## [planned] Measure retrieval precision@5

@@ -8,7 +8,56 @@ name = "autonomous-ai-backend"
 version = "0.1.0"
 description = "Autonomous Multi-Agent AI R&D Platform Backend"
 requires-python = ">=3.11"
-dependencies = []
+
+# Declared here rather than in backend/requirements.txt because `make install` runs
+# `pip install -e ".[dev]"` against this file — an empty list meant a clean clone
+# installed the package and none of what it imports.
+#
+# Lower bounds, not pins: this is a locally hosted platform on one machine, so a lockfile
+# would buy reproducibility nobody is currently paying for while making every dependency
+# bump a two-file change.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "sqlalchemy[asyncio]>=2.0.35",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "redis>=5.0",
+    # The job queue (ADR-002). asyncio-first, so the worker drives LangGraph's async API
+    # directly instead of bridging through a thread pool the way Celery would.
+    "arq>=0.26",
+    "httpx>=0.27",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=2.0",
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.2",
+    "qdrant-client>=1.9",
+    "docker>=7.1",
+    "mlflow>=2.15",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26",
+    "scikit-learn>=1.5",
+    # Observability (ARCHITECTURE.md §12). Both are small, pure-Python and imported at
+    # startup by the API and the worker, so they are hard dependencies rather than an
+    # extra: a build where `/metrics` 500s or where logs are unredacted is not a build
+    # anyone should be able to produce by forgetting a flag.
+    "prometheus-client>=0.20",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    # Type stubs for the third-party packages `mypy app` walks into.
+    "types-PyYAML>=6.0",
+]
 
 [tool.ruff]
 # Exclude commonly ignored directories
@@ -19,7 +68,11 @@ exclude = [
     ".venv",
     "venv",
     "__pycache__",
-    "alembic/versions",  # Auto-generated migrations shouldn't break linting rules
+    # Auto-generated migrations shouldn't break linting rules. Globbed rather than
+    # written as `alembic/versions`: exclude paths resolve against the directory holding
+    # this file, which is the repository root, so the un-globbed form never matched
+    # `backend/alembic/versions` and the migrations were being linted after all.
+    "**/alembic/versions",
 ]
 
 # Standard line length matching Black style
@@ -35,7 +88,12 @@ target-version = "py311"
 # B   = Bugbear (detects likely bugs/design errors)
 # UP  = Pyupgrade (modern Python syntax suggestions)
 # ASYNC = Asyncio checks (critical for FastAPI/async code)
-select = ["E", "W", "F", "I", "B", "UP", "ASYNC"]
+# S = flake8-bandit. Turned on in Phase 7 alongside the §13 hardening work: with the
+# sandbox and the auth layer written, its findings are about real code rather than
+# hypothetical code. `D` (docstrings) and `ANN` (annotations) remain off — each currently
+# reports over a thousand violations across a tree that predates the rule, and a check
+# nobody can act on in one pass is a check that gets switched off rather than fixed.
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC", "S"]
 
 # Ignore rules that conflict with modern FastAPI/Pydantic patterns:
 # B008: Do not perform function calls in argument defaults (needed for FastAPI Depends())
@@ -49,6 +107,17 @@ unfixable = []
 # Allow unused variables when prefixed with an underscore
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+[tool.ruff.lint.per-file-ignores]
+# S101 is `assert`, which is how every test in the suite states its expectation — the rule
+# is aimed at asserts in production paths, where `python -O` silently removes them. The
+# rest are findings *about* the values a security test necessarily contains: a test that
+# asserts LAN binding is refused has to write `0.0.0.0`, and one that asserts a token is
+# redacted has to contain a token-shaped string.
+"**/tests/**" = ["S101", "S104", "S105", "S106", "S108"]
+# S603/S607 are subprocess calls with a partial executable path. The generator scripts run
+# `git ls-files` and nothing else — no shell, no interpolated argument.
+"**/scripts/**" = ["S603", "S607"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 combine-as-imports = true
@@ -58,3 +127,59 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.pytest.ini_options]
+# `backend/` is the import root: `make test` and CI both run pytest from there, and
+# `app` has to be importable as a top-level package.
+testpaths = ["backend/tests"]
+markers = [
+    # Needs a live Docker daemon. Registered so `--strict-markers` does not reject it and
+    # so `-m "not integration"` is a supported way to run the fast suite. The tests skip
+    # themselves when no daemon is reachable, so they are safe to leave selected.
+    "integration: requires a real Docker daemon (backend/tests/integration)",
+]
+addopts = "--strict-markers"
+
+[tool.mypy]
+# ARCHITECTURE.md §20.1. `mypy app`, run from backend/, is CI stage 2.
+python_version = "3.11"
+files = ["app"]
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+# `--disallow-untyped-defs`, which §20.1 states as the standard, is not on yet: turning it
+# on across a tree that predates the rule produces hundreds of errors at once, which gets
+# the whole check switched off rather than acted on. The path is per-module `disallow_
+# untyped_defs = true` blocks as each package is annotated; `app.core.*` below is the
+# first, and every module Phase 7 added lives there.
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# Modules under active typing discipline. Everything Phase 7 wrote is here, so a new
+# untyped function in the observability or security layer fails the build.
+module = ["app.core.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type information. This is not a way to silence our own
+# errors — it says only "mypy has nothing to check these calls against", which is a fact
+# about the dependency rather than a decision about our code. Each one is imported lazily
+# at its call site precisely because it is optional at import time.
+module = [
+    "arq.*",
+    "docker.*",
+    "jsonschema.*",
+    "langchain_ollama.*",
+    "langgraph.*",
+    "mlflow.*",
+    "prometheus_client.*",
+    "qdrant_client.*",
+    "structlog.*",
+    "yaml.*",
+]
+ignore_missing_imports = true

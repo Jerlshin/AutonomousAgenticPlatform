@@ -25,13 +25,25 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app.engine.graph import build_graph, run_config
 from app.engine.state import Budgets, RunOutcome, StepStatus
+from app.services.mlflow_client import MLflowService
 from tests.conftest import (
     PLAN_JSON,
     REPORT_MARKDOWN,
     VALID_PROGRAM,
     diagnosis_reply,
+    researcher_extract_reply,
+    researcher_query_reply,
+    rubric_reply,
 )
-from tests.fakes import CLEAN_METRICS, FakeChatModel, FakeSandboxDriver, run
+from tests.fakes import (
+    CLEAN_METRICS,
+    FakeChatModel,
+    FakeDbSessionFactory,
+    FakeMlflowClient,
+    FakeSandboxDriver,
+    FakeVectorStore,
+    run,
+)
 
 RUN_ID = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
 PROMPT = "Build a classifier on breast_cancer reaching at least 95% test accuracy."
@@ -63,36 +75,64 @@ def invoke(
     coder_replies: list[str],
     debugger_replies: list[str] | None = None,
     reporter_replies: list[str] | None = None,
+    researcher_replies: list[str] | None = None,
+    evaluator_replies: list[str] | None = None,
     driver: FakeSandboxDriver | None = None,
+    vector_store: FakeVectorStore | None = None,
     initial: dict | None = None,
 ) -> tuple[dict, dict]:
-    """Run the graph to completion and return `(final_state, doubles)`."""
+    """Run the graph to completion and return `(final_state, doubles)`.
+
+    A `FakeVectorStore` with one retrievable chunk and a default researcher reply pair
+    (`sufficiency="sufficient"`, no claimed signatures) are wired in unless a test
+    overrides them — the default train step has no context yet, so it always researches
+    once before the Coder runs (§5.1 rule 5), and that round needs to resolve
+    deterministically for tests that are not about research itself.
+    """
     planner = FakeChatModel(plan_replies)
+    researcher = FakeChatModel(
+        researcher_replies or [researcher_query_reply(), researcher_extract_reply()]
+    )
     coder = FakeChatModel(coder_replies)
     debugger = FakeChatModel(debugger_replies or [diagnosis_reply()])
+    evaluator = FakeChatModel(evaluator_replies or [rubric_reply()])
     reporter = FakeChatModel(reporter_replies or [REPORT_MARKDOWN])
     sandbox = driver or FakeSandboxDriver(runs_root, metrics=CLEAN_METRICS)
+    store = vector_store or FakeVectorStore()
+    mlflow_client = FakeMlflowClient()
+    mlflow_service = MLflowService(client=mlflow_client)
+    db_sessions = FakeDbSessionFactory()
 
     graph = build_graph(InMemorySaver())
     config = run_config(
         RUN_ID,
         llm_clients={
             "planner": planner,
+            "researcher": researcher,
             "coder": coder,
             "debugger": debugger,
+            "evaluator": evaluator,
             "reporter": reporter,
         },
         sandbox_driver=sandbox,
+        vector_store=store,
+        mlflow_service=mlflow_service,
+        db_session_factory=db_sessions,
     )
     state = run(
         graph.ainvoke({"run_id": RUN_ID, "prompt": PROMPT, **(initial or {})}, config)
     )
     return state, {
         "planner": planner,
+        "researcher": researcher,
         "coder": coder,
         "debugger": debugger,
+        "evaluator": evaluator,
         "reporter": reporter,
         "sandbox": sandbox,
+        "vector_store": store,
+        "mlflow": mlflow_client,
+        "db_sessions": db_sessions,
         "graph": graph,
     }
 
@@ -111,12 +151,28 @@ class TestHappyPath:
     def test_every_node_ran_exactly_once(self, result):
         """`node_visits` is the potential function in the termination proof (§6.4)."""
         state, _ = result
-        # init, planner, coder, sandbox_exec, reporter, finalizer. No debugger: a clean
-        # execution never enters loop 1.
-        assert state["usage"].node_visits == 6
+        # init, planner, researcher, coder, sandbox_exec, mlops, evaluator, reporter,
+        # finalizer. No debugger: a clean execution never enters loop 1. One research
+        # round: the train step has no context yet, and the default fake declares it
+        # sufficient. `mlops` has no LLM, so it does not change the llm_calls count.
+        assert state["usage"].node_visits == 9
         assert state["usage"].sandbox_executions == 1
-        assert state["usage"].llm_calls == 3  # planner, coder, reporter
+        # planner, researcher x2, coder, evaluator, reporter
+        assert state["usage"].llm_calls == 6
         assert state.get("debug_iterations") == 0
+
+    def test_the_attempt_was_logged_to_mlflow(self, result):
+        """The CLEAN train step's outcome routes through `mlops` before `reporter`."""
+        state, doubles = result
+        ref = state["mlflow"]
+        assert ref is not None
+        assert ref.run_id in doubles["mlflow"].runs
+        assert doubles["mlflow"].runs[ref.run_id].data.metrics["accuracy"] == 0.9737
+        assert state["mlflow_history"] == [ref]
+        # One `experiments` row from `mlops`, one `evaluations` row from `evaluator`.
+        experiment, evaluation = doubles["db_sessions"].rows
+        assert experiment.mlflow_run_id == ref.run_id
+        assert evaluation.decision == "ACCEPT"
 
     def test_the_plan_carries_a_measurable_criteria_contract(self, result):
         state, _ = result
@@ -126,13 +182,22 @@ class TestHappyPath:
         assert {c.metric for c in plan.success_criteria} == {"accuracy", "f1_macro"}
         assert state["plan_history"] == [plan]
 
-    def test_the_train_step_ran_and_the_research_step_was_skipped_not_faked(
+    def test_the_train_step_ran_and_the_standalone_research_step_was_skipped(
         self, result
     ):
-        """No Researcher exists yet; the record says skipped rather than implying success."""
+        """`s1` is a standalone `research` step; there is no `advance_step` yet to
+        sequence past it as its own step, so the record honestly says skipped rather than
+        implying it ran. The Researcher still runs — for `s2`, the train step, per §5.1
+        rule 5 — which is asserted separately below."""
         state, _ = result
         assert state["step_status"]["s1"] is StepStatus.SKIPPED
         assert state["step_status"]["s2"] is StepStatus.SUCCEEDED
+
+    def test_the_researcher_ran_for_the_train_step_before_the_coder(self, result):
+        state, doubles = result
+        assert doubles["researcher"].call_count == 2  # query planning + extraction
+        assert state["context_pack"].sufficiency == "sufficient"
+        assert doubles["vector_store"].searches  # the query plan was actually searched
 
     def test_the_sandbox_ran_the_train_profile_with_the_generated_code(self, result):
         _state, doubles = result
@@ -175,7 +240,7 @@ class TestHappyPath:
         assert "accuracy" in summary
         assert "0.9737" in summary
         # The budget the summary reports must match the run's own accounting.
-        assert "Node visits: 6" in summary
+        assert "Node visits: 9" in summary
 
     def test_the_final_state_is_checkpointed(self, result):
         state, doubles = result
@@ -652,16 +717,23 @@ class TestReporterFallback:
                 raise RuntimeError("ollama is unreachable")
 
         planner = FakeChatModel([plan_reply])
+        researcher = FakeChatModel(
+            [researcher_query_reply(), researcher_extract_reply()]
+        )
         coder = FakeChatModel([coder_reply])
         graph = build_graph(InMemorySaver())
         config = run_config(
             RUN_ID,
             llm_clients={
                 "planner": planner,
+                "researcher": researcher,
                 "coder": coder,
                 "reporter": BrokenModel(),
             },
             sandbox_driver=FakeSandboxDriver(runs_root, metrics=CLEAN_METRICS),
+            vector_store=FakeVectorStore(),
+            mlflow_service=MLflowService(client=FakeMlflowClient()),
+            db_session_factory=FakeDbSessionFactory(),
         )
         state = run(graph.ainvoke({"run_id": RUN_ID, "prompt": PROMPT}, config))
 
@@ -709,3 +781,227 @@ class TestReporterFallback:
         assert "0.9999" not in report
         assert "0.9737" in report
         assert "We hit the target comfortably." in report
+
+
+# A structurally different plan for the replan scenarios: a different model family, a
+# different decomposition, and the criteria the Evaluator will check restated unchanged —
+# a replan changes the approach, not the contract.
+ALTERNATIVE_PLAN_JSON = {
+    **PLAN_JSON,
+    "assumptions": [
+        "Logistic regression underfit at 0.40 accuracy; switching to gradient boosting.",
+    ],
+    "steps": [
+        {**PLAN_JSON["steps"][0], "title": "Retrieve gradient boosting APIs"},
+        {
+            **PLAN_JSON["steps"][1],
+            "title": "Train a gradient boosting classifier",
+            "description": (
+                "HistGradientBoostingClassifier with early stopping, same split and seed."
+            ),
+        },
+        PLAN_JSON["steps"][2],
+    ],
+}
+
+
+def alternative_plan_reply() -> str:
+    return f"```json\n{json.dumps(ALTERNATIVE_PLAN_JSON)}\n```"
+
+
+def metrics_with(**values: float) -> dict:
+    return {**CLEAN_METRICS, "metrics": values}
+
+
+class TestQualityLoop:
+    """§12.1 scenario 6 — criteria narrowly missed, `REFINE` succeeds (loop 2, §6.2).
+
+    The run works, produces real numbers, and falls just short. Nothing crashed, so there
+    is no traceback and nothing for the Debugger to do; what closes the gap is another
+    revision of the same plan aimed at a specific, measured shortfall.
+    """
+
+    @pytest.fixture
+    def result(self, runs_root, plan_reply, coder_reply):
+        return invoke(
+            runs_root=runs_root,
+            plan_replies=[plan_reply],
+            coder_replies=[coder_reply, variant("scaled features, swept C")],
+            driver=FakeSandboxDriver(
+                runs_root,
+                script=[
+                    {"metrics": metrics_with(accuracy=0.9123, f1_macro=0.9412)},
+                    {"metrics": metrics_with(accuracy=0.9737, f1_macro=0.9712)},
+                ],
+            ),
+        )
+
+    def test_the_refinement_closes_the_gap_and_the_run_succeeds(self, result):
+        state, _ = result
+        assert [v.decision.value for v in state["verdicts"]] == ["REFINE", "ACCEPT"]
+        assert state["outcome"] is RunOutcome.SUCCEEDED
+        assert len(state["code_revisions"]) == 2
+
+    def test_the_loop_ran_without_a_single_debug_iteration(self, result):
+        """Loop 2 is not loop 1: nothing crashed, so the Debugger never runs."""
+        state, doubles = result
+        assert state["debug_iterations"] == 0
+        assert doubles["debugger"].call_count == 0
+        assert state.get("errors") is None or state["errors"] == []
+
+    def test_both_attempts_were_logged_and_the_second_is_better(self, result):
+        """§12.1 scenario 6 — two MLflow child runs, the second with better metrics."""
+        state, _ = result
+        first, second = state["mlflow_history"]
+        assert first.run_id != second.run_id
+        assert first.logged_metrics["accuracy"] == 0.9123
+        assert second.logged_metrics["accuracy"] == 0.9737
+
+    def test_the_coder_was_given_the_measured_gap_not_a_traceback(self, result):
+        """The directive carries numbers the platform computed, not model prose."""
+        _state, doubles = result
+        system = doubles["coder"].calls[1][0].content
+        assert "The code ran, but missed the criteria" in system
+        assert "accuracy 0.9123 vs. required ≥ 0.95" in system
+        assert "You are fixing a specific failure" not in system
+
+    def test_the_first_verdict_is_arithmetic_and_the_rubric_is_advisory(self, result):
+        state, _ = result
+        first = state["verdicts"][0]
+        assert first.passed is False
+        assert first.score == pytest.approx(1.5 / 3.5)  # f1_macro's weight only
+        assert [s.dimension for s in first.rubric][0] == "methodology"
+        assert first.rubric_mean == pytest.approx(4.2)
+
+    def test_every_verdict_is_persisted_alongside_its_experiment(self, result):
+        _state, doubles = result
+        kinds = [type(row).__name__ for row in doubles["db_sessions"].rows]
+        assert kinds == ["Experiment", "Evaluation", "Experiment", "Evaluation"]
+        assert [
+            r.decision for r in doubles["db_sessions"].rows if hasattr(r, "decision")
+        ] == [
+            "REFINE",
+            "ACCEPT",
+        ]
+
+
+class TestStrategicLoop:
+    """§12.1 scenario 7 — criteria badly missed, `REPLAN` (loop 3, §6.3)."""
+
+    @pytest.fixture
+    def result(self, runs_root, plan_reply, coder_reply):
+        return invoke(
+            runs_root=runs_root,
+            plan_replies=[plan_reply, alternative_plan_reply()],
+            coder_replies=[coder_reply, variant("gradient boosting")],
+            driver=FakeSandboxDriver(
+                runs_root,
+                script=[
+                    {"metrics": metrics_with(accuracy=0.40, f1_macro=0.31)},
+                    {"metrics": metrics_with(accuracy=0.9737, f1_macro=0.9712)},
+                ],
+            ),
+        )
+
+    def test_a_wide_gap_escalates_to_the_planner(self, result):
+        state, doubles = result
+        assert state["verdicts"][0].decision.value == "REPLAN"
+        assert doubles["planner"].call_count == 2
+        assert state["replan_count"] == 1
+        assert state["plan"].revision == 2
+
+    def test_the_new_plan_is_structurally_different(self, result):
+        state, _ = result
+        first, second = state["plan_history"]
+        assert [s.title for s in first.steps] != [s.title for s in second.steps]
+        assert "gradient boosting" in second.assumptions[0]
+
+    def test_the_replanner_is_shown_the_numbers_it_has_to_beat(self, result):
+        _state, doubles = result
+        replan_prompt = doubles["planner"].calls[1][0].content
+        assert "REPLAN" in replan_prompt
+        assert "accuracy reached 0.4, required gte 0.95" in replan_prompt
+        assert "Directive:" in replan_prompt
+
+    def test_the_second_approach_is_accepted(self, result):
+        state, _ = result
+        assert [v.decision.value for v in state["verdicts"]] == ["REPLAN", "ACCEPT"]
+        assert state["outcome"] is RunOutcome.SUCCEEDED
+
+
+class TestEvaluationBudget:
+    """§12.1 scenario 8 — the budgets run out and the run stops, honestly."""
+
+    @pytest.fixture
+    def result(self, runs_root, plan_reply):
+        # Every attempt lands in the same place, so nothing the loops try can help.
+        return invoke(
+            runs_root=runs_root,
+            plan_replies=[plan_reply],
+            coder_replies=[variant(f"attempt {n}") for n in range(1, 6)],
+            driver=FakeSandboxDriver(
+                runs_root, metrics=metrics_with(accuracy=0.40, f1_macro=0.31)
+            ),
+            initial={"budgets": Budgets(max_replans=1, max_debug_iterations=1)},
+        )
+
+    def test_the_loops_are_spent_in_order_and_then_the_run_aborts(self, result):
+        """Replan first, then the cheaper refinement, then stop. Both bounds hold."""
+        state, _ = result
+        assert [v.decision.value for v in state["verdicts"]] == [
+            "REPLAN",
+            "REFINE",
+            "ABORT",
+        ]
+        assert state["replan_count"] == 1
+        assert state["usage"].sandbox_executions == 3
+
+    def test_a_reproducible_result_that_is_not_good_enough_is_partial(self, result):
+        """Not FAILED: the run produced a real, reproducible number. It is just short."""
+        state, _ = result
+        assert state["outcome"] is RunOutcome.PARTIAL
+        assert state["last_outcome"].classification == "CLEAN"
+
+    def test_the_report_states_the_gap_rather_than_claiming_success(
+        self, result, runs_root
+    ):
+        report = (runs_root / RUN_ID / "final" / "REPORT.md").read_text()
+        assert "PARTIAL" in report
+        assert "0.4" in report
+        assert "0.95" in report
+
+    def test_the_run_still_terminates_through_the_reporter(self, result, runs_root):
+        state, _ = result
+        assert state["report_markdown"] is not None
+        assert (runs_root / RUN_ID / "final" / "bundle.zip").is_file()
+        assert state["usage"].node_visits < Budgets().max_node_visits
+
+
+class TestReportNarratesTheQualityLoop:
+    """The deliverable has to account for a refinement, not just for a crash."""
+
+    def test_section_four_explains_why_a_second_revision_was_written(
+        self, runs_root, plan_reply, coder_reply
+    ):
+        state, _ = invoke(
+            runs_root=runs_root,
+            plan_replies=[plan_reply],
+            coder_replies=[coder_reply, variant("scaled features")],
+            # The model writes only section 1, so section 4 comes from the template and
+            # this asserts on what the platform guarantees rather than on model prose.
+            reporter_replies=[
+                "## 1. Objective\nReach 95% accuracy on breast_cancer.\n"
+            ],
+            driver=FakeSandboxDriver(
+                runs_root,
+                script=[
+                    {"metrics": metrics_with(accuracy=0.9123, f1_macro=0.9412)},
+                    {"metrics": metrics_with(accuracy=0.9737, f1_macro=0.9712)},
+                ],
+            ),
+        )
+        section = state["report_markdown"].split("## 4.")[1].split("## 5.")[0]
+        assert "Evaluation 1 — REFINE" in section
+        assert "accuracy 0.9123 vs ≥ 0.95" in section
+        assert "No execution failures occurred" not in section
+        assert state["outcome"] is RunOutcome.SUCCEEDED

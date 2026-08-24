@@ -20,6 +20,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
+from app.core import metrics
 from app.core.config import settings
 from app.engine.criteria import is_known_metric
 from app.engine.nodes.base import FailurePolicy, get_chat_client, node
@@ -40,9 +41,12 @@ logger = logging.getLogger(__name__)
 MIN_STEPS = 3
 MAX_STEPS = 6
 
-# Kinds this phase can actually execute. `research` needs the Researcher (phase 3) and
-# `evaluate` needs the Evaluator (phase 5); a plan may legitimately contain them, and the
-# steps are marked SKIPPED rather than silently treated as done.
+# Kinds that need the Coder and a container, which is what `current_step_id` points at.
+# `evaluate` and `report` steps are run by the `evaluator` and `reporter` nodes and are
+# routed to directly (`engine/routing.py` §5.1 rules 7–8); a standalone `research` step
+# still has no node that can retire it, so a plan that opens with one has it marked SKIPPED
+# rather than silently treated as done. The Researcher runs *for* an implement/train step
+# (§5.1 rule 5), which needs no step of its own.
 EXECUTABLE_KINDS = frozenset({StepKind.IMPLEMENT, StepKind.TRAIN})
 
 
@@ -107,6 +111,8 @@ async def planner_node(state: AgentState, config: RunnableConfig) -> dict[str, A
     # own (§3.5), and it is what `route_after_debug` reads to decide whether escalating
     # again is still affordable.
     replans = (state.get("replan_count") or 0) + (1 if state.get("plan") else 0)
+    if state.get("plan"):
+        metrics.record_replan(plan.task_kind, _replan_reason(state))
     plan.revision = replans + 1
     current_step = _first_executable(plan)
     step_status = _initial_step_status(plan, current_step)
@@ -201,6 +207,23 @@ def _normalise(plan: Plan) -> Plan:
     return plan
 
 
+def _replan_reason(state: AgentState) -> str:
+    """Who sent control back here, as a bounded metric label.
+
+    The Evaluator is checked first because its verdict is the more recent judgement: a run
+    can carry a Debugger diagnosis that asked for a replan *and* an Evaluator verdict from
+    a later cycle, and attributing the replan to the older of the two would misreport
+    which control actually fired.
+    """
+    verdict = state.get("verdict")
+    if verdict is not None and str(getattr(verdict, "decision", "")) == "REPLAN":
+        return "evaluator"
+    diagnosis = state.get("last_diagnosis")
+    if diagnosis is not None and getattr(diagnosis, "requires_replan", False):
+        return "diagnosis"
+    return "escalation"
+
+
 def _first_executable(plan: Plan) -> PlanStep | None:
     return next((step for step in plan.steps if step.kind in EXECUTABLE_KINDS), None)
 
@@ -245,6 +268,22 @@ def _failure_history(state: AgentState) -> str:
         lines.append(
             f"Verdict {verdict.decision.value} (score {verdict.score:.2f}): {verdict.summary}"
         )
+        for result in verdict.criteria_results:
+            if result.required and not result.passed:
+                observed = (
+                    "not computed"
+                    if result.observed is None
+                    else f"{result.observed:.4g}"
+                )
+                lines.append(
+                    f"  - {result.metric} reached {observed}, required "
+                    f"{result.comparator} {result.threshold:g}"
+                )
+        if verdict.replan_directive:
+            # The Evaluator's instruction for *this* replan. It is the most specific thing
+            # in the history — it was written after seeing both the numbers and the code —
+            # so it goes last, closest to the model's own output.
+            lines.append(f"  Directive: {verdict.replan_directive}")
 
     return wrap_untrusted("failure_history", "\n".join(lines))
 

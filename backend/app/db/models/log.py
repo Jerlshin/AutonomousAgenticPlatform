@@ -5,10 +5,10 @@ Creates a structured audio trail in postgres for real-time telemetry generated b
 """
 
 import uuid
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -50,20 +50,20 @@ class AgentLog(Base):
         nullable=False,
         comment="Detailed log message emitted during node execution.",
     )
-    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
         comment="Structured JSON payload containing agent state or tool inputs/outputs.",
     )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
         comment="Exact UTC timestamp when the log entry was generated.",
     )
 
-    # Connects each AgentLog entry back to its parent Task instance, complementing the logs 
+    # Connects each AgentLog entry back to its parent Task instance, complementing the logs
     task: Mapped["Task"] = relationship("Task", back_populates="logs")
 
     def __repr__(self) -> str:

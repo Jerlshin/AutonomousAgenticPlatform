@@ -1,0 +1,22 @@
+# Grafana datasource provisioning (ARCHITECTURE.md §12.2).
+#
+# The `uid` is fixed and referenced by every dashboard JSON in ../../dashboards. Letting
+# Grafana generate one would make the dashboards unimportable on a fresh volume, which is
+# the whole failure mode "provisioned as code" exists to avoid.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: pluton-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Must match `scrape_interval` in prometheus.yml: it is what `$__rate_interval`
+      # resolves against, and a mismatch produces rate() windows shorter than the scrape
+      # interval — which return empty rather than wrong, so it looks like missing data.
+      timeInterval: 15s
+      httpMethod: POST

@@ -13,23 +13,46 @@ That guarantee is only as good as this decorator being the single place the coun
 failing. A Coder that writes broken code has not failed — that is the debug loop's job. A
 Coder whose model connection drops has.
 
-Phases 2–6 extend this decorator with `run_steps` rows, OTel spans and WebSocket
-`node.started`/`node.completed` events. It is deliberately the only place those hooks will
-need to be added.
+Phase 6 added the event hook the paragraph above always promised: every `node.started`,
+`node.completed`, `node.failed` and `node.retrying` frame in the WebSocket protocol
+(§9.4) is emitted from this wrapper and from nowhere else, for the same reason
+`node_visits` moves in exactly one place. A node body that emitted its own lifecycle
+events could forget to emit one on the path where it failed, which is the path a UI most
+needs them on.
+
+The wrapper also publishes the ambient emitter for the duration of the node body, so the
+call sites several frames below it — `structured.call_text` streaming tokens, the sandbox
+driver's log pump emitting stdout lines — reach it without every function in between
+growing a parameter. See `engine/events.py` for why that is a `contextvars` variable and
+not an argument.
+
+`run_steps` rows and OTel spans remain outstanding, and belong here when they land.
 """
 
 from __future__ import annotations
 
 import functools
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Protocol
 
 from langchain_core.runnables import RunnableConfig
 
+from app.core import metrics
 from app.core.config import settings
+from app.core.logging import bind_run_context, unbind_run_context
+from app.engine.events import (
+    RunEmitter,
+    emitter_from_config,
+    reset_current_node,
+    reset_emitter,
+    set_current_node,
+    set_emitter,
+)
 from app.engine.state import AgentState, RunPhase, Usage
+from app.schemas.events import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -87,52 +110,213 @@ def node(
             if policy is not FailurePolicy.RETRY_THEN_REPORT:
                 attempts = 1
 
-            last_exc: Exception | None = None
-            for attempt in range(1, attempts + 1):
-                logger.info(
-                    "node.started",
-                    extra={
-                        "node": name,
-                        "run_id": state.get("run_id"),
-                        "attempt": attempt,
-                    },
+            emitter = emitter_from_config(config)
+            emitter_token = set_emitter(emitter)
+            node_token = set_current_node(name)
+            # §12.3: `node`, `agent` and `step_id` are bound once, here, so every log line
+            # this node produces — including ones written several frames down in the
+            # sandbox driver or the structured-output ladder — carries them without any
+            # call site passing them. `run_id` and `worker_id` are bound by the job.
+            bind_run_context(
+                node=name,
+                agent=name.replace("_", " ").title(),
+                step_id=state.get("current_step_id"),
+                run_id=state.get("run_id"),
+            )
+            started = time.monotonic()
+            try:
+                return await _run_attempts(
+                    fn,
+                    state,
+                    config,
+                    emitter,
+                    started,
+                    name=name,
+                    phase=phase,
+                    policy=policy,
+                    attempts=attempts,
+                    fallback=fallback,
                 )
-                try:
-                    update = await fn(state, config)
-                except Exception as exc:  # noqa: BLE001 - the policy decides what happens
-                    last_exc = exc
-                    logger.warning(
-                        "node.failed",
-                        extra={
-                            "node": name,
-                            "run_id": state.get("run_id"),
-                            "attempt": attempt,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        },
-                        exc_info=True,
-                    )
-                    if policy is FailurePolicy.FAIL_RUN:
-                        # Infrastructural. Masking it would send the Debugger chasing a
-                        # code bug that does not exist.
-                        raise
-                    if attempt < attempts:
-                        continue
-                    break
-                else:
-                    logger.info(
-                        "node.completed",
-                        extra={"node": name, "run_id": state.get("run_id")},
-                    )
-                    return _finalise(update, phase)
-
-            update = _degrade(name, policy, last_exc, state)
-            if fallback is not None:
-                update = {**update, **_synthesise(name, fallback, state, last_exc)}
-            return _finalise(update, phase)
+            finally:
+                # Unwound in the reverse order they were set, and unconditionally: a node
+                # that raises out of `FAIL_RUN` must not leave the next node inheriting
+                # its name on every token it streams.
+                unbind_run_context("node", "agent", "step_id")
+                reset_current_node(node_token)
+                reset_emitter(emitter_token)
 
         return wrapper
 
     return decorator
+
+
+async def _run_attempts(
+    fn: NodeFn,
+    state: AgentState,
+    config: RunnableConfig,
+    emitter: RunEmitter | None,
+    started: float,
+    *,
+    name: str,
+    phase: RunPhase,
+    policy: FailurePolicy,
+    attempts: int,
+    fallback: FallbackFn | None,
+) -> dict[str, Any]:
+    """The retry loop, lifted out so the wrapper is nothing but context management."""
+    await _emit(
+        emitter,
+        EventType.NODE_STARTED,
+        {
+            "node": name,
+            "agent": name.replace("_", " ").title(),
+            "phase": phase.value,
+            "model": (state.get("model_routing") or {}).get(name),
+            "plan_step_id": state.get("current_step_id"),
+        },
+    )
+    await _summarise(emitter, phase=phase.value, current_node=name)
+
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        logger.info(
+            "node.started",
+            extra={"node": name, "run_id": state.get("run_id"), "attempt": attempt},
+        )
+        try:
+            update = await fn(state, config)
+        except Exception as exc:  # noqa: BLE001 - the policy decides what happens
+            last_exc = exc
+            logger.warning(
+                "node.failed",
+                extra={
+                    "node": name,
+                    "run_id": state.get("run_id"),
+                    "attempt": attempt,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+                exc_info=True,
+            )
+            await _emit(
+                emitter,
+                EventType.NODE_FAILED,
+                {
+                    "node": name,
+                    "error": {
+                        "kind": type(exc).__name__,
+                        "message": str(exc),
+                        "fingerprint": f"{type(exc).__name__}:{name}",
+                    },
+                    "will_retry": attempt < attempts,
+                    "policy": policy.value,
+                },
+            )
+            if policy is FailurePolicy.FAIL_RUN:
+                # Infrastructural. Masking it would send the Debugger chasing a code
+                # bug that does not exist. Timed here rather than in the caller because
+                # this is the one exit from a node that never reaches the code below.
+                metrics.observe_node(name, "failed", time.monotonic() - started)
+                raise
+            if attempt < attempts:
+                await _emit(
+                    emitter,
+                    EventType.NODE_RETRYING,
+                    {"node": name, "attempt": attempt + 1, "max_attempts": attempts},
+                )
+                continue
+            break
+        else:
+            logger.info(
+                "node.completed", extra={"node": name, "run_id": state.get("run_id")}
+            )
+            final = _finalise(update, phase)
+            metrics.observe_node(name, "ok", time.monotonic() - started)
+            await _emit_completed(emitter, name, started, update)
+            return final
+
+    update = _degrade(name, policy, last_exc, state)
+    if fallback is not None:
+        update = {**update, **_synthesise(name, fallback, state, last_exc)}
+    final = _finalise(update, phase)
+    # `degraded` is its own outcome rather than folded into `ok`: a node that fell back to
+    # its deterministic path took a different amount of time doing it, and mixing the two
+    # into one latency series hides exactly the regression the panel exists to show.
+    metrics.observe_node(name, "degraded", time.monotonic() - started)
+    # A degraded node still completed from the graph's point of view — control moves on —
+    # so the UI gets a `node.completed` carrying the degradation rather than a timeline
+    # entry that simply never ends.
+    await _emit_completed(emitter, name, started, update, degraded=True)
+    return final
+
+
+async def _emit(
+    emitter: RunEmitter | None, event: EventType, payload: dict[str, Any]
+) -> None:
+    """Emit if there is an emitter. Every event call site in this module goes through here."""
+    if emitter is not None:
+        await emitter.emit(event, payload)
+
+
+async def _emit_completed(
+    emitter: RunEmitter | None,
+    name: str,
+    started: float,
+    update: dict[str, Any],
+    *,
+    degraded: bool = False,
+) -> None:
+    """`node.completed` with the timing and token spend the timeline pane renders.
+
+    Read from the node's own `usage` delta rather than from accumulated state: the
+    decorator sees the update before the reducer folds it in, which is the only moment
+    the *incremental* cost of this one node is available.
+    """
+    if emitter is None:
+        return
+    reported: Usage = update.get("usage") or Usage()
+    await emitter.emit(
+        EventType.NODE_COMPLETED,
+        {
+            "node": name,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+            "tokens_in": reported.tokens_in,
+            "tokens_out": reported.tokens_out,
+            "llm_calls": reported.llm_calls,
+            "degraded": degraded,
+            "summary": _summary_of(name, update, degraded=degraded),
+        },
+    )
+
+
+def _summary_of(name: str, update: dict[str, Any], *, degraded: bool) -> str:
+    """A one-line account of what the node produced, for the timeline pane.
+
+    Derived from the update rather than written by each node: a node's own summary string
+    would be one more thing to keep in step with what the node actually did.
+    """
+    if degraded:
+        return f"{name} degraded to its fallback"
+    plan = update.get("plan")
+    if plan is not None:
+        return f"{len(plan.steps)}-step plan, {len(plan.success_criteria)} criteria"
+    revision = update.get("current_revision")
+    if revision is not None:
+        return (
+            f"revision {revision.revision}, {len(revision.content.splitlines())} lines"
+        )
+    outcome = update.get("last_outcome")
+    if outcome is not None:
+        return f"{outcome.classification} in {outcome.duration_ms} ms"
+    verdict = update.get("verdict")
+    if verdict is not None:
+        return f"{verdict.decision.value}, score {verdict.score:.2f}"
+    return ""
+
+
+async def _summarise(emitter: RunEmitter | None, **values: Any) -> None:
+    """Refresh `run:{id}:summary`, which is what a newly connected client sees first."""
+    if emitter is not None:
+        await emitter.summary(**values)
 
 
 def _finalise(update: dict[str, Any], phase: RunPhase) -> dict[str, Any]:
@@ -222,6 +406,106 @@ def get_sandbox(config: RunnableConfig) -> Any:
     from app.services.sandbox import get_sandbox_driver
 
     return get_sandbox_driver()
+
+
+def get_vector_store(config: RunnableConfig) -> Any:
+    """The Qdrant service for this run, injectable for tests.
+
+    Resolution mirrors `get_chat_client` and `get_sandbox`: an explicit override in the
+    run config, then the real default. Phase 3's whole retrieval and episodic-memory path
+    — the Researcher's corpus search, the Debugger's `run_memory` lookup, the Reporter's
+    `run_memory` write — resolves through this one function, so a test drives all three
+    with a single fake store and the graph never needs a live Qdrant to run.
+    """
+    configurable = (config or {}).get("configurable") or {}
+    store = configurable.get("vector_store")
+    if store is not None:
+        return store
+
+    from app.services.vector_store import VectorStoreService
+
+    return VectorStoreService()
+
+
+def get_run_memory_searcher(config: RunnableConfig) -> Any:
+    """The episodic-memory lookup callable for this run (AGENTS.md §7.5).
+
+    `search(fingerprint=..., message=..., task_kind=...) -> list[str]`. An explicit
+    `run_memory_search` override wins (what the Debugger's unit tests inject); otherwise
+    the default queries `run_memory` through `get_vector_store` and reduces each hit to
+    its `fix_summary`, which is the only field the Debugger's prompt actually needs.
+    """
+    configurable = (config or {}).get("configurable") or {}
+    search = configurable.get("run_memory_search")
+    if search is not None:
+        return search
+
+    store = get_vector_store(config)
+
+    async def _default(*, fingerprint: str, message: str, task_kind: str) -> list[str]:
+        hits = await store.search_run_memory(
+            fingerprint=fingerprint, message=message, task_kind=task_kind
+        )
+        return [hit["fix_summary"] for hit in hits if hit.get("fix_summary")]
+
+    return _default
+
+
+def get_run_memory_writer(config: RunnableConfig) -> Any:
+    """The episodic-memory write callable for this run (AGENTS.md §7.8).
+
+    An explicit `run_memory_writer` override wins; otherwise the default writes through
+    `get_vector_store`. Callers are responsible for only invoking this on `SUCCEEDED` runs
+    — the writer itself does not know the outcome of the run it is being called from.
+    """
+    configurable = (config or {}).get("configurable") or {}
+    writer = configurable.get("run_memory_writer")
+    if writer is not None:
+        return writer
+
+    store = get_vector_store(config)
+
+    async def _default(**kwargs: Any) -> str:
+        return await store.write_run_memory(**kwargs)
+
+    return _default
+
+
+def get_mlflow_service(config: RunnableConfig) -> Any:
+    """The `MLflowService` for this run, injectable for tests (`mlops`, MLOPS.md §4).
+
+    Resolution mirrors `get_sandbox` and `get_vector_store`: an explicit override in the
+    run config — what `tests.fakes.FakeMlflowClient` is wired in through — wins; otherwise
+    the real service, whose own `client` property lazily imports `mlflow` on first use.
+    """
+    configurable = (config or {}).get("configurable") or {}
+    service = configurable.get("mlflow_service")
+    if service is not None:
+        return service
+
+    from app.services.mlflow_client import MLflowService
+
+    return MLflowService()
+
+
+def get_db_session_factory(config: RunnableConfig) -> Any:
+    """A callable returning an async-context-manager DB session for this run.
+
+    `mlops` is the first engine node to touch Postgres directly, so there is no existing
+    convention beyond the FastAPI-side `get_db` dependency in `app.core.db`. This mirrors
+    that module's `AsyncSessionLocal` — a callable session factory — rather than a bare
+    session, so a fresh session is opened per call instead of one being held open for the
+    life of the run. An explicit `db_session_factory` override in the run config is what a
+    test injects instead of a real database.
+    """
+    configurable = (config or {}).get("configurable") or {}
+    factory = configurable.get("db_session_factory")
+    if factory is not None:
+        return factory
+
+    from app.core.db import AsyncSessionLocal
+
+    return AsyncSessionLocal
 
 
 def run_metadata(state: AgentState, key: str, default: Any = None) -> Any:

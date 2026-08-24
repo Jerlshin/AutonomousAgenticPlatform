@@ -11,6 +11,11 @@ structured call therefore escalates through cheap repairs before giving up:
 | 3 | Re-prompt with the `ValidationError` verbatim plus the offending output — models fix their own schema errors reliably when shown the error | +1 call |
 | 4 | Raise `StructuredOutputError`; the node applies its declared failure policy | — |
 
+Every call in this module goes through `_invoke`, which streams the response through the
+event bus as `token.delta` frames (§9.4) when a run is being watched and falls back to a
+single `ainvoke` when it is not. The repair ladder is unaffected either way: it sees a
+fully reassembled message, not a stream.
+
 Stage 4 of the specification — field-wise extraction, one scalar at a time — is not
 implemented. It costs +N calls to rescue a case stage 3 already handles in one, and until
 `pluton_structured_output_attempts` shows stage 3 failing in practice there is nothing to
@@ -23,12 +28,15 @@ import ast
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
 
+from app.core import metrics
+from app.engine import events
 from app.engine.state import Usage
 
 logger = logging.getLogger(__name__)
@@ -217,6 +225,94 @@ def _with_json_format(llm: ChatClient, output_model: type[BaseModel]) -> ChatCli
         return llm
 
 
+def _model_name(llm: ChatClient) -> str:
+    """The model this client is bound to, for the `model` metric label.
+
+    `ChatOllama` exposes it as `.model`; a bound runnable wraps that one level down. Both
+    are read defensively — an unlabelled call is a gap in a dashboard, but a client whose
+    attribute layout changed must not be able to raise out of the call it was decorating.
+    """
+    for candidate in (llm, getattr(llm, "bound", None)):
+        name = getattr(candidate, "model", None)
+        if isinstance(name, str) and name:
+            return name
+    return "unknown"
+
+
+async def _invoke(llm: ChatClient, messages: list[BaseMessage]) -> BaseMessage:
+    """One model call, streamed to the event bus when anything is listening.
+
+    Streaming is conditional on two things, and both matter. There must be an ambient
+    emitter — otherwise nobody would see the tokens and streaming would only add
+    per-chunk overhead to a call whose result is used whole. And the client must expose
+    `astream` — `FakeChatModel` does not, which is what keeps the entire test suite on
+    the deterministic `ainvoke` path rather than making every node test also a test of
+    chunk reassembly.
+
+    The reassembled message is what the caller gets either way, so `call_structured`'s
+    repair ladder and `usage_from_response` see exactly the same object in both modes.
+
+    This is also the single choke point for §12.1's LLM metrics. Instrumenting here rather
+    than at each node is what makes "every model call is counted" structural: a node added
+    later cannot forget to, because there is no other way to reach a model.
+    """
+    started = time.perf_counter()
+    model = _model_name(llm)
+    # The ambient node name is the role: for every LLM-driven node the two are the same
+    # word, and it is already bound by the `@node` envelope, so no call site has to pass it.
+    role = events.current_node()
+    ttft: float | None = None
+    try:
+        emitter = events.current_emitter()
+        astream = getattr(llm, "astream", None)
+        if emitter is None or astream is None:
+            response = await llm.ainvoke(messages)
+        else:
+            node = role
+            chunks: list[Any] = []
+            async for chunk in astream(messages):
+                chunks.append(chunk)
+                text = message_text(chunk)
+                if text:
+                    # Only a chunk carrying text is a *token*; providers emit leading
+                    # metadata-only chunks, and timing to one of those would report a TTFT
+                    # the user never saw anything for.
+                    if ttft is None:
+                        ttft = time.perf_counter() - started
+                    await emitter.emit_token(node or "unknown", text)
+
+            if chunks:
+                merged = chunks[0]
+                for chunk in chunks[1:]:
+                    merged = merged + chunk
+                response = merged
+            else:
+                # A stream that yielded nothing is a provider quirk, not a model with
+                # nothing to say. Falling back keeps one empty stream from failing a node.
+                ttft = None
+                response = await llm.ainvoke(messages)
+    except Exception:
+        metrics.record_llm_call(
+            model=model,
+            role=role,
+            outcome="error",
+            duration_s=time.perf_counter() - started,
+        )
+        raise
+
+    usage = usage_from_response(response)
+    metrics.record_llm_call(
+        model=model,
+        role=role,
+        outcome="ok",
+        duration_s=time.perf_counter() - started,
+        tokens_in=usage.tokens_in,
+        tokens_out=usage.tokens_out,
+        ttft_s=ttft,
+    )
+    return response
+
+
 async def call_structured(
     llm: ChatClient,
     *,
@@ -237,7 +333,7 @@ async def call_structured(
     last_errors = "no response"
 
     for attempt in range(max_repairs + 1):
-        response = await constrained.ainvoke(messages)
+        response = await _invoke(constrained, messages)
         usage = _merge(usage, usage_from_response(response))
         raw = message_text(response)
 
@@ -248,6 +344,11 @@ async def call_structured(
             except ValidationError as exc:
                 last_errors = _format_errors(exc)
             else:
+                metrics.record_structured_output(
+                    events.current_node(),
+                    "constrained" if attempt == 0 else "repair",
+                    attempt + 1,
+                )
                 return LLMResult(
                     value=value, usage=usage, attempts=attempt + 1, raw=raw
                 )
@@ -269,13 +370,16 @@ async def call_structured(
             HumanMessage(content=_repair_prompt(output_model, last_errors)),
         ]
 
+    metrics.record_structured_output(
+        events.current_node(), "exhausted", max_repairs + 1
+    )
     raise StructuredOutputError(output_model.__name__, last_errors, raw)
 
 
 async def call_text(llm: ChatClient, *, system: str, user: str) -> tuple[str, Usage]:
     """A plain completion, for nodes whose deliverable is prose or code rather than JSON."""
-    response = await llm.ainvoke(
-        [SystemMessage(content=system), HumanMessage(content=user)]
+    response = await _invoke(
+        llm, [SystemMessage(content=system), HumanMessage(content=user)]
     )
     return message_text(response), usage_from_response(response)
 

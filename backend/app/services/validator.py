@@ -70,7 +70,8 @@ FORBIDDEN_MODULES = frozenset(
     {"subprocess", "ctypes", "mmap", "pty", "resource", "signal", "multiprocessing"}
 )
 
-WRITABLE_PREFIXES = ("/artifacts", "/workspace", "/tmp")
+# S108: container paths, not host ones — the set of mounts §10.4 makes writable.
+WRITABLE_PREFIXES = ("/artifacts", "/workspace", "/tmp")  # noqa: S108
 WRITE_MODE = re.compile(r"[wax+]")
 
 MAX_SOURCE_BYTES = 200 * 1024

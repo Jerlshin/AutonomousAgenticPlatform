@@ -770,6 +770,25 @@ via `make gen-env-example`; `make check-env-example` fails on any drift and is w
   `npm install` and `tsc` with confusing parse errors rather than "file not found".
 - **D-021** · `.DS_Store` files are committed at the repo root, `backend/`, and `backend/app/`
   despite being in `.gitignore` — they were added before the ignore rule. `git rm --cached` them.
+- **D-022** · **The sandbox never received the program it was supposed to run.** `/workspace` is a
+  tmpfs and the only mounts were `/datasets` and `/artifacts`, so `main.py` — written by the driver
+  to `/runs/{id}/rev-N/main.py`, one level above the bind-mounted `artifacts/` — was not visible
+  inside the container. Every real execution exited 2 (`can't open file '/workspace/main.py'`).
+  Present in [§10.4](./docs/ARCHITECTURE.md#104-exact-launch-configuration)'s launch block as well
+  as in the code, which is why no reading of one against the other caught it. **Fixed**: a
+  read-only *file* bind of `main.py` at `/workspace/main.py`, layered over the tmpfs. The program
+  additionally cannot rewrite itself mid-execution, and `/artifacts` stays the only writable mount.
+  Found by `tests/integration/test_sandbox_security.py`, which was the first thing to run a real
+  container end to end.
+- **D-023** · **No sandbox output was ever captured.** `_pump_logs` called
+  `container.logs(..., demux=True)`, but docker-py accepts `demux` on the *attach* endpoint only;
+  `logs()` raised `TypeError`, which the surrounding `except` turned into one debug line. Both
+  `stdout_tail` and `stderr_tail` came back empty for every real container, so every failure looked
+  like a silent crash and the Debugger had no traceback to work from. **Fixed**: `container.attach(
+  demux=True)`, established *before* the container starts — an attach issued after a container has
+  already exited never returns, and a program that prints and exits in 50 ms is the common case.
+  The capture runs on a dedicated daemon thread rather than `asyncio.to_thread` so a wedged daemon
+  connection cannot consume a shared executor worker for the life of the process.
 
 ---
 

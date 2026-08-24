@@ -1526,6 +1526,11 @@ container = docker_client.containers.create(
     mounts=[
         Mount("/datasets",  DATASETS_VOLUME,   type="volume", read_only=True),
         Mount("/artifacts", run_artifacts_dir, type="bind",   read_only=False),
+        # `/workspace` is a tmpfs, so the entrypoint has to be mounted in explicitly or
+        # the command above fails with ENOENT before any code runs (defect D-022). A
+        # single read-only file, layered over the tmpfs: the program gets its own source
+        # and cannot rewrite it mid-execution, and /artifacts stays the only writable mount.
+        Mount("/workspace/main.py", run_dir / "main.py", type="bind", read_only=True),
     ],
     environment={
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -1592,8 +1597,8 @@ sequenceDiagram
     V-->>D: ok
     D->>FS: write main.py, requirements.txt; chown 65534
     D->>DK: create (profile config, labels)
-    D->>DK: start
     D->>C: attach(stdout, stderr, demux=True)
+    D->>DK: start
     par streaming
         C-->>D: stdout lines
         D-->>N: emit sandbox.stdout (rate-limited)
@@ -1929,7 +1934,13 @@ than by omission; the LLM throughput panel serves the same diagnostic purpose.
 
 ### 12.2 Grafana dashboards
 
-Provisioned as code in `infrastructure/grafana/dashboards/`:
+Provisioned as code in `infrastructure/observability/grafana/dashboards/`, generated from
+`scripts/gen_dashboards.py` — `make check-dashboards` (and CI) fails if the checked-in JSON has
+drifted. A dashboard is 500 lines of JSON per board; hand-editing five of them is how panels end
+up querying metrics that were renamed, which fails *silently* as an empty graph rather than as an
+error. The generator also makes the panel descriptions part of the deliverable: a panel that needs
+a paragraph to interpret carries that paragraph, because the person reading it at 2 a.m. did not
+write it.
 
 | Dashboard | Panels |
 |---|---|
@@ -2387,8 +2398,18 @@ platform can have.
 | `.github/workflows/docker-build.yml` | push to `main`, PR touching Dockerfiles | Stages 4–5, with Buildx layer caching |
 | `.github/workflows/bench.yml` | `workflow_dispatch`, nightly cron | `make bench` on a self-hosted GPU runner; publishes the scorecard as an artifact |
 
-`docker-build.yml` currently exists as a **zero-byte file** — a workflow that silently does nothing
-(defect **D-019**). `ci.yml` implements stage 1 only.
+All three files now carry real jobs; `docker-build.yml` was the zero-byte stub that silently
+did nothing (defect **D-019**, fixed). Two jobs are deliberately *conditional* rather than
+absent, and each says so in the Actions log rather than passing quietly:
+
+* **Frontend lint/typecheck** runs once `frontend/` has a committed `package-lock.json` and an
+  ESLint 9 flat config. Without a lockfile `npm ci` is not reproducible, and `eslint .` has no
+  configuration to read.
+* **Image builds** run per Dockerfile, skipping any that is still empty ([§10.10](#1010-sandbox-images),
+  [§21](#21-implementation-status)). Skipping is announced with `::notice`, which is exactly what
+  the zero-byte workflow failed to do.
+
+`bench.yml` needs a self-hosted GPU runner and is not yet written.
 
 ### 19.3 Caching and concurrency
 
@@ -2422,9 +2443,20 @@ not by convention.
 | Modern syntax | `X \| None`, not `Optional[X]`; builtin generics | `ruff` rule `UP` |
 | Likely bugs | Mutable default args, loop-variable binding | `ruff` rule `B` |
 
-The active `[tool.ruff.lint]` selection is `["E","W","F","I","B","UP","ASYNC"]`. Adding `D`
-(docstrings), `S` (bandit security), and `ANN` (annotations) is a Phase 7 task — turning them on
-before the code exists produces noise rather than signal.
+The active `[tool.ruff.lint]` selection is `["E","W","F","I","B","UP","ASYNC","S"]`. `S`
+(flake8-bandit) was turned on in Phase 7 alongside the [§13](#13-security-model) hardening work:
+with the sandbox and the auth layer written, its findings are about real code. It reported seven
+in application code, every one a deliberate decision now carrying a `# noqa` and its
+justification — the in-network `0.0.0.0` bind form, the comparison against the development
+`SECRET_KEY` default that refuses to start with it, `EventType.TOKEN_DELTA`, and the container's
+`/tmp` (a `noexec,nosuid,nodev` tmpfs, not a host directory). It also caught one real defect: a
+type-narrowing `assert` in the control-channel listener that `python -O` would strip, leaving a
+cancel channel that had silently stopped listening.
+
+`D` (docstrings) and `ANN` (annotations) remain off. Each currently reports over a thousand
+violations across a tree that predates the rule, and a check nobody can act on in one pass is a
+check that gets switched off rather than fixed. `mypy`'s `disallow_untyped_defs` is enabled
+per-module for `app.core.*` as the first step on that path.
 
 ### 20.2 TypeScript
 
@@ -2469,8 +2501,8 @@ says what moved and why.
 | API: runs / artifacts / corpus / agents / benchmarks | ⬜ Not started | [§8](#8-rest-api-contract) |
 | API: WebSocket | ⬜ Not started | [§9](#9-websocket-protocol) |
 | Redis layer (`core/redis.py`) | ⬜ Not started | Pool, Streams, locks, caches |
-| Structured logging | ⬜ Not started | [§12.3](#123-structured-logging) |
-| Prometheus metrics | ⬜ Not started | [§12.1](#121-metrics) |
+| Structured logging | ✅ Complete | `core/logging.py`: structlog to stdout as JSON, `run_id`/`step_id`/`node`/`agent`/`worker_id` bound once per node via `contextvars`, and the [§12.3](#123-structured-logging) redaction processor. Redaction matches both by key *and* by value, because a token pasted into an exception message has no key to match on. stdlib records go through the same `ProcessorFormatter` chain, so a sink that only covered migrated call sites cannot exist |
+| Prometheus metrics | ✅ Complete | `core/metrics.py` defines every metric in [§12.1](#121-metrics) and is instrumented across the API middleware, the `@node` envelope, the structured-output ladder, the sandbox driver, the vector store, the WebSocket pump and the run job. Free-form label values (`task_kind`, validator rejections, HTTP routes) are clamped to closed vocabularies at the boundary; every recording helper swallows its own errors, so a monitoring defect cannot fail a run |
 | LangGraph state schema | ✅ Complete | `AgentState` per [`AGENTS.md §3`](./AGENTS.md#3-state-schema): every channel declared, with the `append` / `merge_usage` / `merge_step_status` reducers |
 | Graph assembly (`engine/graph.py`) | 🟡 Partial | The correctness cycle `coder → sandbox_exec → debugger → coder`, its `debugger → planner` escalation, and `reporter → finalizer` as the sole terminal path, compiled with `AsyncPostgresSaver`; researcher, mlops, evaluator, `advance_step` and the HITL gate outstanding ([`AGENTS.md §4`](./AGENTS.md#4-graph-topology)) |
 | Agent nodes (all 9) | 🟡 Partial | `init`, `planner`, `coder` (with revision mode), `sandbox_exec`, `debugger`, `reporter` and `finalizer` implemented behind the `@node` envelope, which now carries the declared-`fallback` hook that makes `DEGRADE` and `SYNTHESISE_FALLBACK` structural; `researcher.py` still contains a copy of `qdrant_tool.py` (D-009); `mlops` and `evaluator` outstanding |
@@ -2485,10 +2517,10 @@ says what moved and why.
 | MLflow client | ⬜ Not started | [`MLOPS.md`](./MLOPS.md) |
 | arq worker | ⬜ Not started | [§5](#5-runtime-execution-model) |
 | Frontend | ⬜ Empty files | `package.json` and `tsconfig.json` are 0 bytes |
-| Docker Compose | 🟡 Partial | 4 of 11 services; no api/worker/frontend/observability; missing health checks (D-008) |
+| Docker Compose | 🟡 Partial | 4 data services plus the `observability` profile (Prometheus, Grafana, node-exporter, cAdvisor, postgres- and redis-exporter) and `linux-gpu` (DCGM). Health checks and `condition: service_healthy` throughout (D-008 fixed). api/worker/frontend still run on the host |
 | Sandbox Dockerfiles | ⬜ Empty | [§10.10](#1010-sandbox-images) |
-| CI | 🟡 Partial | Lint only; `docker-build.yml` is empty; no tests, build, or compose smoke |
-| Tests | 🟡 Partial | 318 tests: state and reducers, criteria arithmetic, the static gate (100%), the launch configuration, traceback parsing and fingerprinting, the Debugger and Reporter nodes, the Coder's revision mode, the routers (100% branch), and the graph end to end against a mock LLM including the self-correction, budget-exhaustion and stagnation scenarios. No contract, E2E or load layers yet ([`AGENTS.md §12`](./AGENTS.md#12-testing-strategy)) |
+| CI | ✅ Complete | `ci.yml`: ruff check + format, `mypy`, the full suite with an 80% coverage gate, and a contracts job checking `.env.example`, the generated dashboards, documentation links and secret leakage. `docker-build.yml`: per-image Buildx builds with `type=gha` caching, then a compose smoke that waits for health, applies migrations, probes `/health/deep` and asserts `/metrics` serves samples. Frontend and empty-Dockerfile jobs are conditional and announce themselves ([§19.2](#192-workflow-files)) |
+| Tests | 🟡 Partial | 828 tests. Unit and component: state and reducers, criteria arithmetic, the static gate (100%), the launch configuration, traceback parsing, every node, the routers (100% branch), the graph end to end against a mock LLM, the observability surface (§12.1's metric table checked name-by-name against the registry, and every provisioned dashboard query checked against it), redaction, and bearer-token coverage of every mounted route. **Integration**: `tests/integration/test_sandbox_security.py` runs real containers against a real daemon and asserts [§13.1](#131-threat-model)'s T1–T5 and T7 — network denial, filesystem immutability, memory and CPU caps, PID limits, capability drop, wall-clock kill, path traversal. Backend coverage 86% against an 80% gate. No contract or load layers yet ([`AGENTS.md §12`](./AGENTS.md#12-testing-strategy)) |
 
 Defect identifiers **D-001** … **D-009** are catalogued with file, line, and remediation in
 [`notes.md` § Known defects](../notes.md#known-defects-in-the-current-tree).

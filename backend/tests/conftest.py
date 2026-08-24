@@ -109,6 +109,35 @@ def coder_reply() -> str:
     return f"```python\n{VALID_PROGRAM}```\n```json\n{json.dumps(sidecar)}\n```"
 
 
+RESEARCHER_QUERY_JSON = {"queries": ["LogisticRegression pipeline StandardScaler"]}
+
+RESEARCHER_EXTRACT_JSON = {
+    "key_facts": [],
+    "api_signatures": [],
+    "citations": {},
+    "sufficiency": "sufficient",
+    "gaps": [],
+}
+
+
+def researcher_query_reply(**overrides: object) -> str:
+    payload = {**RESEARCHER_QUERY_JSON, **overrides}
+    return f"```json\n{json.dumps(payload)}\n```"
+
+
+def researcher_extract_reply(**overrides: object) -> str:
+    """A researcher extraction response declaring the round sufficient with no claimed
+    signatures — nothing for `_verify_signatures` to drop, so one round is deterministic."""
+    payload = {**RESEARCHER_EXTRACT_JSON, **overrides}
+    return f"```json\n{json.dumps(payload)}\n```"
+
+
+@pytest.fixture
+def researcher_replies() -> list[str]:
+    """Both Researcher calls in order: query planning, then extraction."""
+    return [researcher_query_reply(), researcher_extract_reply()]
+
+
 DIAGNOSIS_JSON = {
     "error_fingerprint": "KeyError:target",
     "root_cause": (
@@ -159,6 +188,52 @@ def debugger_reply() -> str:
 def reporter_reply() -> str:
     """A reporter response: the five narrative sections, as markdown prose."""
     return REPORT_MARKDOWN
+
+
+RUBRIC_JSON = {
+    "rubric": [
+        {
+            "dimension": "methodology",
+            "score": 4,
+            "justification": "Stratified 80/20 split with a held-out test set.",
+        },
+        {
+            "dimension": "code_quality",
+            "score": 4,
+            "justification": "One pipeline, named constants, no duplicated blocks.",
+        },
+        {
+            "dimension": "metric_validity",
+            "score": 4,
+            "justification": "accuracy and f1_macro together cover the imbalance risk.",
+        },
+        {
+            "dimension": "reproducibility",
+            "score": 5,
+            "justification": "PLUTON_SEED is read and applied to random and numpy.",
+        },
+        {
+            "dimension": "goal_alignment",
+            "score": 4,
+            "justification": "Answers the accuracy question the user asked.",
+        },
+    ],
+    "proposed_decision": None,
+    "refine_directive": None,
+    "replan_directive": None,
+    "summary": "A seeded logistic-regression baseline that meets its accuracy target.",
+}
+
+
+def rubric_reply(**overrides: object) -> str:
+    """An evaluator response: the advisory RubricAssessment JSON, fenced."""
+    payload = {**RUBRIC_JSON, **overrides}
+    return f"```json\n{json.dumps(payload)}\n```"
+
+
+@pytest.fixture
+def evaluator_reply() -> str:
+    return rubric_reply()
 
 
 @pytest.fixture

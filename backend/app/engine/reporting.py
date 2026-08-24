@@ -40,6 +40,7 @@ from app.engine.state import (
     Deliverable,
     Diagnosis,
     ErrorRecord,
+    EvalDecision,
     Plan,
     RunOutcome,
     StepStatus,
@@ -107,6 +108,7 @@ def report_context(state: AgentState) -> dict[str, Any]:
         "steps": _steps(state, plan),
         "dataset": _dataset(plan, state),
         "debug_cycles": debug_cycles(state),
+        "quality_cycles": quality_cycles(state),
         "revision_count": len(state.get("code_revisions") or []),
         "metrics": metrics,
         "params": dict((last.metrics or {}).get("params") or {}) if last else {},
@@ -119,6 +121,46 @@ def report_context(state: AgentState) -> dict[str, Any]:
         "execution": _execution(state),
         "usage": _usage_row(state),
     }
+
+
+def quality_cycles(state: AgentState) -> list[dict[str, Any]]:
+    """One entry per verdict that sent the run back around (AGENTS.md §6.2, §6.3).
+
+    A refinement is the other kind of "what went wrong": the program did not crash, it
+    simply was not good enough, and the reader who wants to know why a run took four
+    attempts needs the same account of the quality loop that `debug_cycles` gives of the
+    correctness loop. Without it, a run that refined twice shows three code revisions in
+    the artifact list and no explanation of what changed between them.
+
+    `ACCEPT` verdicts are omitted: the acceptance is already the report's headline, and
+    listing it here would read as a cycle that happened rather than the end of them.
+    """
+    verdicts = state.get("verdicts") or []
+    cycles: list[dict[str, Any]] = []
+    for index, verdict in enumerate(verdicts):
+        if verdict.decision is EvalDecision.ACCEPT:
+            continue
+        misses = [r for r in verdict.criteria_results if r.required and not r.passed]
+        cycles.append(
+            {
+                "n": index + 1,
+                "decision": verdict.decision.value,
+                "score": f"{verdict.score:.2f}",
+                "summary": verdict.summary,
+                "directive": verdict.refine_directive or verdict.replan_directive or "",
+                "shortfall": "; ".join(
+                    f"{r.metric} "
+                    + ("not computed" if r.observed is None else f"{r.observed:.4g}")
+                    + f" vs {COMPARATOR_SYMBOLS.get(r.comparator, r.comparator)} "
+                    f"{r.threshold:g}"
+                    for r in misses
+                ),
+                "rubric": [
+                    f"{score.dimension} {score.score}/5" for score in verdict.rubric
+                ],
+            }
+        )
+    return cycles
 
 
 def debug_cycles(state: AgentState) -> list[dict[str, Any]]:
@@ -217,7 +259,12 @@ The next attempt ran cleanly.
 {% else %}
 This attempt did not resolve the failure.
 {% endif %}
-{% endfor %}{% else %}{% if revision_count %}No execution failures occurred. The first program written for this run executed cleanly.{% else %}No execution failures occurred, because no program was ever executed — the run ended before code reached the sandbox.{% endif %}
+{% endfor %}{% endif %}{% if quality_cycles %}{% for cycle in quality_cycles %}### Evaluation {{ cycle.n }} — {{ cycle.decision }} (criteria score {{ cycle.score }})
+
+**What fell short.** {% if cycle.shortfall %}{{ cycle.shortfall }}.{% else %}{{ cycle.summary }}{% endif %}
+
+**What was done about it.** {{ cycle.directive }}
+{% endfor %}{% endif %}{% if not debug_cycles and not quality_cycles %}{% if revision_count %}No execution failures occurred. The first program written for this run executed cleanly.{% else %}No execution failures occurred, because no program was ever executed — the run ended before code reached the sandbox.{% endif %}
 {% endif %}
 ## 5. Results in detail
 
@@ -680,9 +727,16 @@ def _render_plainly(context: dict[str, Any]) -> str:
         "## 4. What went wrong and how it was fixed",
         "",
         "\n".join(
-            f"- Attempt {cycle['revision']} [{cycle['kind']}]: {cycle['message']} "
-            f"Diagnosis: {cycle['root_cause'] or 'none recorded'}"
-            for cycle in context["debug_cycles"]
+            [
+                f"- Attempt {cycle['revision']} [{cycle['kind']}]: {cycle['message']} "
+                f"Diagnosis: {cycle['root_cause'] or 'none recorded'}"
+                for cycle in context["debug_cycles"]
+            ]
+            + [
+                f"- Evaluation {cycle['n']} [{cycle['decision']}]: "
+                f"{cycle['shortfall'] or cycle['summary']}"
+                for cycle in context["quality_cycles"]
+            ]
         )
         or "No execution failures occurred.",
         "",

@@ -6,10 +6,10 @@ Manages the lifecycle of a user-submitted AI research job.
 
 import enum
 import uuid
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum as SQLEnum, JSON, String, Text
+from sqlalchemy import JSON, DateTime, Enum as SQLEnum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,8 +18,11 @@ if TYPE_CHECKING:
     from app.db.models.artifact import Artifact
     from app.db.models.log import AgentLog
 
+
 # execution status
-class TaskStatus(str, enum.Enum): # inherits from both str and enum.Enum
+class TaskStatus(
+    enum.StrEnum
+):  # `StrEnum`, matching every other enum in engine/state.py
     """Lifecycle status states for multi-agent task execution."""
 
     PENDING = "PENDING"
@@ -27,6 +30,13 @@ class TaskStatus(str, enum.Enum): # inherits from both str and enum.Enum
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    # A run whose worker died: ARCHITECTURE.md §5.3's `INTERRUPTED`. Distinct from FAILED
+    # because it is the one non-terminal state — every node boundary is checkpointed, so
+    # `POST /runs/{id}/resume` replays at most one node. Written only by
+    # `reap_interrupted_runs` (`app/worker/cron.py`), which detects it as `RUNNING` with
+    # no `lock:run:{id}` in Redis.
+    INTERRUPTED = "INTERRUPTED"
+
 
 # status - primary table schema
 class Task(Base):
@@ -34,10 +44,12 @@ class Task(Base):
 
     __tablename__ = "tasks"
 
-    id: Mapped[uuid.UUID] = mapped_column( # Generates unique 128-bit UUID primary key to safely identify execution jobs across distributed workers.
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the task job.",
+    id: Mapped[uuid.UUID] = (
+        mapped_column(  # Generates unique 128-bit UUID primary key to safely identify execution jobs across distributed workers.
+            primary_key=True,
+            default=uuid.uuid4,
+            comment="Unique identifier for the task job.",
+        )
     )
     title: Mapped[str] = mapped_column(
         String(255),
@@ -56,12 +68,12 @@ class Task(Base):
         index=True,
         comment="Current execution state of the task.",
     )
-    result: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    result: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
         comment="Final JSON result payload returned by the multi-agent graph.",
     )
-    error: Mapped[Optional[str]] = mapped_column(
+    error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Captured stack trace or error message if execution fails.",
@@ -69,14 +81,14 @@ class Task(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         comment="Timestamp when the task was initially submitted.",
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
         comment="Timestamp when the task record was last modified.",
     )
@@ -97,4 +109,3 @@ class Task(Base):
 
     def __repr__(self) -> str:
         return f"<Task id={self.id} title='{self.title}' status={self.status}>"
-    

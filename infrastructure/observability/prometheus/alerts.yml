@@ -1,0 +1,115 @@
+# Alerting rules (ARCHITECTURE.md §12, §16).
+#
+# There is no Alertmanager in this stack. These rules fire in Prometheus and surface on
+# Grafana's alert list, which is the right weight for a single-box platform: the operator
+# is the person sitting in front of it, and paging them on their own laptop is theatre.
+#
+# Every rule here answers "something is wrong that I would not otherwise notice". Anything
+# an operator sees immediately — the API being down while they use it — is deliberately
+# absent, because an alert nobody acts on trains people to ignore the ones that matter.
+
+groups:
+  - name: pluton-availability
+    interval: 30s
+    rules:
+      - alert: PlutonApiDown
+        expr: up{job="pluton-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The API has been unreachable for two minutes."
+          description: "Prometheus cannot scrape {{ $labels.instance }}. Runs cannot be dispatched."
+
+      - alert: PlutonWorkerDown
+        expr: up{job="pluton-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No worker is exposing metrics."
+          description: >-
+            Queued runs will sit in the queue. If the worker died mid-run, its run lock
+            lapses and `reap_interrupted_runs` marks the run INTERRUPTED (§16).
+
+  - name: pluton-pipeline
+    interval: 30s
+    rules:
+      - alert: PlutonQueueBacklog
+        # WORKER_MAX_JOBS defaults to 2, so a queue that stays above 5 for ten minutes is
+        # more than a transient burst — it is arrival outpacing a pool that cannot grow.
+        expr: pluton_queue_depth > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue depth has been above 5 for ten minutes."
+          description: "Runs are arriving faster than WORKER_MAX_JOBS can retire them."
+
+      - alert: PlutonRunFailureRateHigh
+        # Guarded by a minimum volume: three runs in an hour, two of which failed, is not
+        # a trend, and a rule that fires on it would fire constantly on a quiet box.
+        expr: >-
+          sum(increase(pluton_runs_total{status="FAILED"}[1h]))
+            / clamp_min(sum(increase(pluton_runs_total[1h])), 1) > 0.5
+          and sum(increase(pluton_runs_total[1h])) >= 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than half of the last hour's runs failed."
+
+  - name: pluton-sandbox
+    interval: 30s
+    rules:
+      - alert: PlutonSandboxOomBurst
+        expr: sum(increase(pluton_sandbox_oom_total[15m])) >= 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Three or more sandbox containers were OOM-killed in fifteen minutes."
+          description: >-
+            Either generated code is loading datasets whole, or SANDBOX_TRAIN_MEMORY is
+            too low for the workload. Check the peak-RSS panel on Sandbox Health.
+
+      - alert: PlutonSandboxTimeoutBurst
+        expr: sum(increase(pluton_sandbox_timeouts_total[15m])) >= 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Three or more sandbox executions hit the wall clock in fifteen minutes."
+
+  - name: pluton-models
+    interval: 30s
+    rules:
+      - alert: PlutonLlmThroughputCollapsed
+        # On macOS there is no GPU exporter at all (§12.1), so token throughput is the
+        # only signal that a model spilled to CPU. Below 5 tok/s the platform is unusable
+        # in practice — a single Coder call takes minutes.
+        expr: >-
+          histogram_quantile(
+            0.5, sum by (le, model) (rate(pluton_llm_tokens_per_second_bucket[10m]))
+          ) < 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} is producing under 5 tokens/s."
+          description: >-
+            The model has most likely spilled out of GPU memory. Check what else is
+            resident (`ollama ps`) and whether OLLAMA_KEEP_ALIVE is holding a second model.
+
+      - alert: PlutonStructuredOutputExhaustion
+        expr: >-
+          sum(rate(pluton_structured_output_attempts_count{stage="exhausted"}[30m]))
+            / clamp_min(sum(rate(pluton_structured_output_attempts_count[30m])), 0.001) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10% of structured calls exhausted the repair ladder."
+          description: >-
+            The repair ladder is failing rather than repairing, which is the condition
+            §11.2 says would justify implementing stage 4 (field-wise extraction).

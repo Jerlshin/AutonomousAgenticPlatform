@@ -69,7 +69,9 @@ async def _check_http(
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S) as client:
             response = await client.get(url)
         if response.status_code == 200:
-            return ServiceStatus(status="healthy", message=ok_message, required=required)
+            return ServiceStatus(
+                status="healthy", message=ok_message, required=required
+            )
         return ServiceStatus(
             status="unhealthy",
             message=f"HTTP {response.status_code} from {url}",
@@ -91,14 +93,21 @@ async def _check_ollama() -> ServiceStatus:
         # Re-fetch is wasteful; read the version off a second cheap call only on success.
         try:
             async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S) as client:
-                version = (await client.get(f"{settings.OLLAMA_BASE_URL}/api/version")).json()
+                version = (
+                    await client.get(f"{settings.OLLAMA_BASE_URL}/api/version")
+                ).json()
             result.message = f"Version {version.get('version', 'unknown')}"
-        except Exception:  # noqa: BLE001 — the probe already succeeded; detail is optional
-            pass
+        except Exception as exc:  # noqa: BLE001 - the probe already succeeded
+            # Not silence: the version is decoration on a probe that has already returned
+            # healthy, but swallowing the reason it could not be read would hide a
+            # partially-broken Ollama that answers /api/tags and not /api/version.
+            logger.debug("Could not read the Ollama version: %s", exc)
     return result
 
 
-@router.get("/deep", response_model=DeepHealthResponse, summary="Deep Dependency Health Check")
+@router.get(
+    "/deep", response_model=DeepHealthResponse, summary="Deep Dependency Health Check"
+)
 async def deep_health_check(response: Response) -> DeepHealthResponse:
     """Pings PostgreSQL, Redis, Qdrant, MLflow, and Ollama concurrently.
 
@@ -126,12 +135,16 @@ async def deep_health_check(response: Response) -> DeepHealthResponse:
     services = dict(zip(names, results, strict=True))
 
     hard_down = [n for n, s in services.items() if s.required and s.status != "healthy"]
-    soft_down = [n for n, s in services.items() if not s.required and s.status != "healthy"]
+    soft_down = [
+        n for n, s in services.items() if not s.required and s.status != "healthy"
+    ]
 
     if hard_down:
         overall = "unhealthy"
         response.status_code = http_status.HTTP_503_SERVICE_UNAVAILABLE
-        logger.warning("Deep health check: hard dependencies down: %s", ", ".join(hard_down))
+        logger.warning(
+            "Deep health check: hard dependencies down: %s", ", ".join(hard_down)
+        )
     elif soft_down:
         overall = "degraded"
     else:
