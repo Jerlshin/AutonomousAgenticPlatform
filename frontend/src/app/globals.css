@@ -1,23 +1,28 @@
 @import "tailwindcss";
 
-/* Tailwind v4 keeps the design tokens in CSS, not in a config file. Dark by default:
-   this dashboard is watched for twenty minutes at a stretch while a run executes, and
-   that is the wrong thing to do to someone on a bright background. */
+/* docs/FRONTEND.md §10 — the design system.
+   Dark by default: this dashboard is watched for twenty minutes at a stretch while a run
+   executes, and a bright background is the wrong thing to do to someone doing that.
+   Tailwind v4 keeps tokens in CSS; there is no tailwind.config.js. */
 @theme {
-  --color-ink: #0b0d11;
-  --color-surface: #12151c;
-  --color-raised: #1a1f28;
-  --color-line: #262c38;
-  --color-fg: #e6e9ef;
-  --color-muted: #8b93a4;
+  --color-ink: #0b0d11; /* page ground */
+  --color-surface: #12151c; /* pane ground */
+  --color-raised: #1a1f28; /* cards, dialogs, hovered rows */
+  --color-line: #262c38; /* borders, dividers */
+  --color-fg: #e6e9ef; /* primary text */
+  --color-muted: #8b93a4; /* secondary text, labels */
 
-  --color-running: #4c9aff;
-  --color-ok: #3ecf8e;
-  --color-warn: #f2c94c;
-  --color-fail: #f2695c;
-  --color-idle: #5a6376;
+  --color-running: #4c9aff; /* in progress */
+  --color-ok: #3ecf8e; /* succeeded, criterion met */
+  --color-warn: #f2c94c; /* degraded, optional miss, budget ≥ 80%, gate waiting */
+  --color-fail: #f2695c; /* failed, criterion missed, stderr */
+  --color-idle: #5a6376; /* pending, never visited */
 
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* Density is a feature (§10). This is an instrument panel, not a marketing page. */
+  --text-pane: 0.8125rem; /* 13px */
+  --text-pane--line-height: 1.25rem; /* leading-5 — the console's fixed row height */
 }
 
 html,
@@ -27,8 +32,249 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04";
 }
 
+/* Every counter is tabular, or the timeline jitters on each tick (§10). Applied by class
+   rather than globally so prose in the report viewer keeps proportional figures. */
+.tnum,
+table,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 /* A thin scrollbar, because three of the four panes in the live run view scroll. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line) transparent;
+}
+
+/* Focus must be visible on the dark ground (§11). The browser default ring is a
+   near-invisible dotted outline here, which is the same as having none. */
+:focus-visible {
+  outline: 2px solid var(--color-running);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* The only continuous animations permitted (§10): the active-node pulse and the
+   connection badge. Both are ≤ 200 ms transitions plus one slow breathing loop. */
+@keyframes pluton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.pulse {
+  animation: pluton-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pluton-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.edge-active {
+  stroke-dasharray: 4 4;
+  animation: pluton-dash 0.6s linear 1;
+}
+
+/* §11: under reduced motion, pulses become static tone changes rather than disappearing
+   — the state still has to be legible, it just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .pulse {
+    opacity: 1;
+  }
+}
+
+/* Screen-reader-only content: the graph pane's off-screen state list, and the live region
+   that announces run status changes (§11). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* §8.8: the report is the only long-form prose in the app, and the typography plugin is
+   not a budgeted dependency (§9.4), so its Markdown output is styled here by element.
+   Scoped to `.report-prose` so it cannot leak into the deck, where every surface is a
+   dense control rather than a document. */
+.report-prose {
+  color: var(--color-fg);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.report-prose p,
+.report-prose ul,
+.report-prose ol,
+.report-prose blockquote,
+.report-prose pre,
+.report-prose table {
+  margin-block: 0.6rem;
+}
+
+.report-prose h3,
+.report-prose h4 {
+  margin-block: 0.9rem 0.35rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.report-prose h3 {
+  font-size: 13px;
+}
+
+.report-prose h4 {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.report-prose ul,
+.report-prose ol {
+  padding-left: 1.25rem;
+}
+
+.report-prose ul {
+  list-style: disc;
+}
+
+.report-prose ol {
+  list-style: decimal;
+}
+
+.report-prose li {
+  margin-block: 0.15rem;
+}
+
+.report-prose a {
+  color: var(--color-running);
+  text-underline-offset: 2px;
+}
+
+.report-prose a:hover {
+  text-decoration: underline;
+}
+
+.report-prose code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  background: var(--color-raised);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+.report-prose pre {
+  overflow-x: auto;
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+}
+
+.report-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.report-prose blockquote {
+  border-left: 2px solid var(--color-line);
+  padding-left: 0.75rem;
+  color: var(--color-muted);
+}
+
+/* The criteria table is a table, so GFM tables must be legible rather than merely
+   present (§8.8). It scrolls on its own instead of widening the document. */
+.report-prose table {
+  display: block;
+  overflow-x: auto;
+  width: max-content;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.report-prose th,
+.report-prose td {
+  border: 1px solid var(--color-line);
+  padding: 0.25rem 0.6rem;
+  text-align: left;
+}
+
+.report-prose th {
+  background: var(--color-raised);
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.report-prose img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+}
+
+.report-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin-block: 1rem;
+}
+
+/* §8.8: the report's print stylesheet is the one place this app is not dark. A4, light,
+   and without the chrome that means nothing on paper. */
+@media print {
+  html,
+  body {
+    background: #fff;
+    color: #111;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  /* The prose carries dark-theme custom properties, which print as light-on-white.
+     Overriding the elements rather than the tokens keeps the screen palette intact. */
+  .report-prose,
+  .report-prose h3,
+  .report-prose h4,
+  .report-prose th,
+  .report-prose a {
+    color: #111;
+  }
+
+  .report-prose code,
+  .report-prose pre,
+  .report-prose th {
+    background: #f4f4f5;
+  }
+
+  .report-prose pre,
+  .report-prose th,
+  .report-prose td,
+  .report-prose img,
+  .report-prose blockquote {
+    border-color: #d4d4d8;
+  }
+
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
 }

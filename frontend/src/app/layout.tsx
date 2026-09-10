@@ -1,24 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Providers } from "@/components/providers";
+import { ConnectionBadge } from "@/components/shell/ConnectionBadge";
+import { NavBar } from "@/components/shell/NavBar";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Pluton R&D Engine",
-  description: "Autonomous multi-agent R&D platform — live run view",
+  description: "Autonomous multi-agent R&D platform — the live run control deck",
 };
 
-const NAV = [
-  { href: "/", label: "Dashboard" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/corpus", label: "Corpus" },
-  { href: "/benchmarks", label: "Benchmarks" },
-];
-
 /**
- * The app shell. A Server Component: it holds no state and touches no socket, which is
- * the split §18.1 asks for — Server Components for static shells, Client Components for
- * anything touching the WebSocket.
+ * The app shell (§8.1). A Server Component: it holds no state and touches no socket.
+ *
+ * `min-h-0` on `main` is not decoration. Without it a flex child with an internal scroll
+ * area grows to its content height, and the four-pane run deck scrolls the *page* instead
+ * of the pane — which is the one thing §8.5.1 forbids outright.
  */
 export default function RootLayout({
   children,
@@ -27,22 +24,18 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-ink text-fg antialiased">
         <Providers>
-          <div className="flex min-h-screen flex-col">
+          <div className="flex h-screen flex-col">
             <header className="flex h-12 shrink-0 items-center gap-6 border-b border-line px-4">
-              <Link href="/" className="text-sm font-semibold tracking-tight">
+              <Link
+                href="/"
+                className="whitespace-nowrap text-sm font-semibold tracking-tight"
+              >
                 Pluton <span className="text-muted">R&amp;D Engine</span>
               </Link>
-              <nav className="flex items-center gap-4 text-sm text-muted">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="transition-colors hover:text-fg"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+              <NavBar />
+              <div className="ml-auto flex items-center gap-2">
+                <ConnectionBadge />
+              </div>
             </header>
             <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           </div>

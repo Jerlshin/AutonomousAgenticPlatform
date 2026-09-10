@@ -1,0 +1,2477 @@
+{
+  "components": {
+    "schemas": {
+      "BenchmarkCaseRead": {
+        "description": "One case as declared in the suite file.",
+        "properties": {
+          "expect": {
+            "additionalProperties": true,
+            "title": "Expect",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "task_kind": {
+            "default": "",
+            "title": "Task Kind",
+            "type": "string"
+          },
+          "tests": {
+            "default": "",
+            "description": "What judgement this case is testing, if it is a trap.",
+            "title": "Tests",
+            "type": "string"
+          },
+          "trap": {
+            "default": false,
+            "description": "Judgement cases are scored separately and never averaged in.",
+            "title": "Trap",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "prompt"
+        ],
+        "title": "BenchmarkCaseRead",
+        "type": "object"
+      },
+      "BenchmarkKpis": {
+        "description": "The platform KPIs of AGENTS.md \u00a713.1, over the rows returned.",
+        "properties": {
+          "cases_scored": {
+            "title": "Cases Scored",
+            "type": "integer"
+          },
+          "expectations_met": {
+            "title": "Expectations Met",
+            "type": "integer"
+          },
+          "first_pass_rate": {
+            "description": "Succeeded with 0 debug iterations. Target \u2265 0.40.",
+            "title": "First Pass Rate",
+            "type": "number"
+          },
+          "judgement_score": {
+            "description": "Trap cases passed. Target \u2265 2/3.",
+            "title": "Judgement Score",
+            "type": "string"
+          },
+          "mean_debug_iterations": {
+            "description": "Over successful runs. Target \u2264 1.5.",
+            "title": "Mean Debug Iterations",
+            "type": "number"
+          },
+          "replan_rate": {
+            "description": "Runs needing \u2265 1 replan. Target \u2264 0.25.",
+            "title": "Replan Rate",
+            "type": "number"
+          },
+          "task_success_rate": {
+            "description": "SUCCEEDED / total. Target \u2265 0.70.",
+            "title": "Task Success Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cases_scored",
+          "expectations_met",
+          "task_success_rate",
+          "judgement_score",
+          "mean_debug_iterations",
+          "first_pass_rate",
+          "replan_rate"
+        ],
+        "title": "BenchmarkKpis",
+        "type": "object"
+      },
+      "BenchmarkResultRead": {
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "suite",
+          "case_id",
+          "passed",
+          "created_at"
+        ],
+        "title": "BenchmarkResultRead",
+        "type": "object"
+      },
+      "BenchmarkResultsResponse": {
+        "properties": {
+          "kpis": {
+            "$ref": "#/components/schemas/BenchmarkKpis"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkResultRead"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "suite",
+          "total",
+          "kpis",
+          "results"
+        ],
+        "title": "BenchmarkResultsResponse",
+        "type": "object"
+      },
+      "BenchmarkRunAccepted": {
+        "description": "202 \u2014 the suite is running in the background; poll `/results` for scores.",
+        "properties": {
+          "cases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "version",
+          "cases",
+          "message"
+        ],
+        "title": "BenchmarkRunAccepted",
+        "type": "object"
+      },
+      "BenchmarkRunRequest": {
+        "description": "Optional narrowing of a suite execution to specific cases.",
+        "properties": {
+          "cases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case ids to run. Omit to run the whole suite.",
+            "title": "Cases"
+          }
+        },
+        "title": "BenchmarkRunRequest",
+        "type": "object"
+      },
+      "BenchmarkSuiteListResponse": {
+        "properties": {
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkSuiteRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "suites"
+        ],
+        "title": "BenchmarkSuiteListResponse",
+        "type": "object"
+      },
+      "BenchmarkSuiteRead": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkCaseRead"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "BenchmarkSuiteRead",
+        "type": "object"
+      },
+      "CorpusDocumentCreate": {
+        "description": "Payload for ingesting one document into the corpus.",
+        "properties": {
+          "collection": {
+            "default": "rd_corpus",
+            "enum": [
+              "rd_corpus",
+              "code_exemplars"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "source_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where this came from. Defaults to a synthetic upload URI.",
+            "title": "Source Uri"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "text": {
+            "description": "Raw document text to chunk and index.",
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "title": "CorpusDocumentCreate",
+        "type": "object"
+      },
+      "CorpusDocumentListResponse": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/CorpusDocumentRead"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "documents"
+        ],
+        "title": "CorpusDocumentListResponse",
+        "type": "object"
+      },
+      "CorpusDocumentRead": {
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "collection": {
+            "title": "Collection",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ingested_at": {
+            "format": "date-time",
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "metadata_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Json"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_uri": {
+            "title": "Source Uri",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_uri",
+          "title",
+          "collection",
+          "sha256",
+          "chunk_count",
+          "ingested_at"
+        ],
+        "title": "CorpusDocumentRead",
+        "type": "object"
+      },
+      "CorpusSearchHit": {
+        "properties": {
+          "point_id": {
+            "title": "Point Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "section": {
+            "default": "",
+            "title": "Section",
+            "type": "string"
+          },
+          "source_uri": {
+            "default": "",
+            "title": "Source Uri",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "trust_level": {
+            "default": "curated",
+            "title": "Trust Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "point_id",
+          "score",
+          "text"
+        ],
+        "title": "CorpusSearchHit",
+        "type": "object"
+      },
+      "CorpusSearchRequest": {
+        "description": "Debug retrieval directly \u2014 what the Researcher would see for this query.",
+        "properties": {
+          "collection": {
+            "default": "rd_corpus",
+            "enum": [
+              "rd_corpus",
+              "code_exemplars",
+              "run_memory"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "task_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filters code_exemplars/run_memory to this task kind.",
+            "title": "Task Kind"
+          },
+          "top_k": {
+            "default": 6,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "CorpusSearchRequest",
+        "type": "object"
+      },
+      "CorpusSearchResponse": {
+        "properties": {
+          "collection": {
+            "title": "Collection",
+            "type": "string"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/CorpusSearchHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "collection",
+          "hits"
+        ],
+        "title": "CorpusSearchResponse",
+        "type": "object"
+      },
+      "DeepHealthResponse": {
+        "description": "Deep system status response evaluating all downstream container dependencies.",
+        "properties": {
+          "services": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ServiceStatus"
+            },
+            "title": "Services",
+            "type": "object"
+          },
+          "status": {
+            "example": "healthy",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "services"
+        ],
+        "title": "DeepHealthResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthCheckResponse": {
+        "description": "Shallow system status response.",
+        "properties": {
+          "environment": {
+            "example": "development",
+            "title": "Environment",
+            "type": "string"
+          },
+          "status": {
+            "default": "ok",
+            "example": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment"
+        ],
+        "title": "HealthCheckResponse",
+        "type": "object"
+      },
+      "RunAccepted": {
+        "description": "`202 Accepted` from `POST /tasks/{task_id}/runs` (\u00a75.2).\n\nCarries `ws_url` so the browser can open the stream without knowing how the path is\nassembled, and `already_running` so an idempotent replay of the same request is\ndistinguishable from a fresh dispatch by something other than luck.",
+        "properties": {
+          "already_running": {
+            "default": false,
+            "title": "Already Running",
+            "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "QUEUED",
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "ws_url": {
+            "title": "Ws Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "ws_url"
+        ],
+        "title": "RunAccepted",
+        "type": "object"
+      },
+      "RunApproveRequest": {
+        "description": "Release a HITL gate (\u00a79.5's `approve`).",
+        "properties": {
+          "decision": {
+            "pattern": "^(approve|reject)$",
+            "title": "Decision",
+            "type": "string"
+          },
+          "gate": {
+            "title": "Gate",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "gate",
+          "decision"
+        ],
+        "title": "RunApproveRequest",
+        "type": "object"
+      },
+      "RunCancelRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "RunCancelRequest",
+        "type": "object"
+      },
+      "RunEvent": {
+        "description": "One entry of the durable log, in the \u00a79.2 envelope shape.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "v": {
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "run_id",
+          "ts",
+          "type"
+        ],
+        "title": "RunEvent",
+        "type": "object"
+      },
+      "RunEventsResponse": {
+        "description": "`GET /runs/{run_id}/events?after_seq=` \u2014 the same backlog the WebSocket replays.\n\nExists so a client that cannot hold a socket open (curl, a test, a notebook) reads the\nidentical history a browser does, from the identical source. A second code path that\nreconstructed events from database rows would drift from the stream the moment either\nside changed.",
+        "properties": {
+          "after_seq": {
+            "title": "After Seq",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RunEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "gap": {
+            "default": false,
+            "description": "True when `after_seq` predates retention: history the caller asked for has been trimmed.",
+            "title": "Gap",
+            "type": "boolean"
+          },
+          "last_seq": {
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "oldest_available": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Available"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "total",
+          "after_seq",
+          "last_seq",
+          "events"
+        ],
+        "title": "RunEventsResponse",
+        "type": "object"
+      },
+      "RunListResponse": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunRead"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "runs"
+        ],
+        "title": "RunListResponse",
+        "type": "object"
+      },
+      "RunRead": {
+        "description": "Run detail \u2014 the body `GET /runs/{run_id}` returns and `run.snapshot` carries.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Node"
+          },
+          "debug_iterations": {
+            "default": 0,
+            "title": "Debug Iterations",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "last_seq": {
+            "default": 0,
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "node_visits": {
+            "default": 0,
+            "title": "Node Visits",
+            "type": "integer"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "replan_count": {
+            "default": 0,
+            "title": "Replan Count",
+            "type": "integer"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "status_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The \u00a75.3 state when it is finer than the durable column: QUEUED, AWAITING_INPUT, PARTIAL, INTERRUPTED.",
+            "title": "Status Detail"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tokens_in": {
+            "default": 0,
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "default": 0,
+            "title": "Tokens Out",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "worker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Id"
+          },
+          "ws_url": {
+            "title": "Ws Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "title",
+          "prompt",
+          "status",
+          "created_at",
+          "updated_at",
+          "ws_url"
+        ],
+        "title": "RunRead",
+        "type": "object"
+      },
+      "ServiceStatus": {
+        "description": "Detailed health status for an individual infrastructure service.",
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Connected successfully",
+            "title": "Message"
+          },
+          "required": {
+            "default": true,
+            "example": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "example": "healthy",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ServiceStatus",
+        "type": "object"
+      },
+      "StandardResponse": {
+        "description": "Generic status response payload.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "success": {
+            "default": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "StandardResponse",
+        "type": "object"
+      },
+      "TaskCreate": {
+        "description": "Payload schema for submitting a new agent workflow task.",
+        "properties": {
+          "prompt": {
+            "description": "Detailed prompt outlining instructions for the agent network.",
+            "example": "Research MNIST architectures, write training script, and log metrics to MLflow.",
+            "minLength": 5,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "title": {
+            "description": "Concise descriptive title for the task.",
+            "example": "Train PyTorch MNIST Model",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "prompt"
+        ],
+        "title": "TaskCreate",
+        "type": "object"
+      },
+      "TaskListResponse": {
+        "description": "Paginated task list response.",
+        "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRead"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "tasks"
+        ],
+        "title": "TaskListResponse",
+        "type": "object"
+      },
+      "TaskRead": {
+        "description": "Response schema returning full task details.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskRead",
+        "type": "object"
+      },
+      "TaskStatus": {
+        "description": "Lifecycle status states for multi-agent task execution.",
+        "enum": [
+          "PENDING",
+          "RUNNING",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED",
+          "INTERRUPTED"
+        ],
+        "title": "TaskStatus",
+        "type": "string"
+      },
+      "TaskUpdate": {
+        "description": "Schema for updating task status or final results.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TaskUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WsTicketRequest": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "WsTicketRequest",
+        "type": "object"
+      },
+      "WsTicketResponse": {
+        "description": "A single-use, run-scoped, 60-second credential (\u00a79.3).\n\n`ws_url` is returned assembled rather than left to the client to build: the query\nparameter names are part of the protocol, and a client that spells `after_seq` wrong\nsilently replays the whole backlog on every reconnect instead of failing loudly.",
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          },
+          "ws_url": {
+            "title": "Ws Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "run_id",
+          "expires_in",
+          "ws_url"
+        ],
+        "title": "WsTicketResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Autonomous Multi-Agent AI Platform",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/benchmarks": {
+      "get": {
+        "description": "Every suite in `benchmarks/suites/`, with its cases and their expectations.",
+        "operationId": "list_benchmark_suites_api_v1_benchmarks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkSuiteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List benchmark suites",
+        "tags": [
+          "Benchmarks & KPIs"
+        ]
+      }
+    },
+    "/api/v1/benchmarks/{suite}/results": {
+      "get": {
+        "description": "Recorded results for a suite, newest first, with \u00a713.1's KPIs computed over them.",
+        "operationId": "get_benchmark_results_api_v1_benchmarks__suite__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Score only the most recent run of each case, which is what the KPI targets are defined over.",
+            "in": "query",
+            "name": "latest_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Score only the most recent run of each case, which is what the KPI targets are defined over.",
+              "title": "Latest Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkResultsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Historical benchmark scores",
+        "tags": [
+          "Benchmarks & KPIs"
+        ]
+      }
+    },
+    "/api/v1/benchmarks/{suite}/run": {
+      "post": {
+        "description": "Start a suite in the background and return the cases that will run.\n\nThe suite is loaded and the requested case ids validated *before* the 202, so a typo in\na case name is an error the caller sees rather than a background task that quietly runs\nnothing.",
+        "operationId": "run_benchmark_suite_api_v1_benchmarks__suite__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BenchmarkRunRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkRunAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute a benchmark suite",
+        "tags": [
+          "Benchmarks & KPIs"
+        ]
+      }
+    },
+    "/api/v1/corpus/documents": {
+      "get": {
+        "operationId": "list_documents_api_v1_corpus_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "collection",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDocumentListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List corpus documents",
+        "tags": [
+          "Corpus & RAG"
+        ]
+      },
+      "post": {
+        "description": "Chunk, embed and index a document into `rd_corpus` or `code_exemplars`.",
+        "operationId": "create_document_api_v1_corpus_documents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusDocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest a corpus document",
+        "tags": [
+          "Corpus & RAG"
+        ]
+      }
+    },
+    "/api/v1/corpus/documents/{doc_id}": {
+      "delete": {
+        "description": "Delete a document and every Qdrant point it was chunked into.",
+        "operationId": "remove_document_api_v1_corpus_documents__doc_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete a corpus document",
+        "tags": [
+          "Corpus & RAG"
+        ]
+      }
+    },
+    "/api/v1/corpus/search": {
+      "post": {
+        "description": "Run the same retrieval the Researcher uses, without a graph run \u2014 for debugging\nwhat a query actually surfaces before trusting it inside a prompt.",
+        "operationId": "search_corpus_api_v1_corpus_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Inspect retrieval directly",
+        "tags": [
+          "Corpus & RAG"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Returns basic service availability without pinging downstream dependencies.",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Shallow Health Check",
+        "tags": [
+          "Health Checks"
+        ]
+      }
+    },
+    "/api/v1/health/deep": {
+      "get": {
+        "description": "Pings PostgreSQL, Redis, Qdrant, MLflow, and Ollama concurrently.\n\nReturns 503 when a hard dependency is down, 200 otherwise \u2014 `degraded` if a soft\ndependency (MLflow, Ollama) is unreachable.",
+        "operationId": "deep_health_check_api_v1_health_deep_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Deep Dependency Health Check",
+        "tags": [
+          "Health Checks"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run detail",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/approve": {
+      "post": {
+        "description": "Deliver a HITL decision to the worker waiting on the gate (\u00a79.5's `approve`).\n\nThe gate itself is not built yet \u2014 \u00a721 marks it outstanding \u2014 so today this delivers\nthe signal and reports whether anything was listening. That is the honest behaviour\nfor a half-built feature: the transport is real and testable, and an operator gets\ntold plainly when no worker is waiting rather than a 202 that means nothing.",
+        "operationId": "approve_run_api_v1_runs__run_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release a human-approval gate",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Signal a cooperative cancel (\u00a79.5's `cancel`, \u00a75.3's `RUNNING \u2192 CANCELLED`).",
+        "operationId": "cancel_run_api_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RunCancelRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel a run",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/events": {
+      "get": {
+        "description": "The retained event log, read from the same stream the WebSocket replays.",
+        "operationId": "get_run_events_api_v1_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Return events with seq > this value.",
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Return events with seq > this value.",
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEventsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Event backlog",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/resume": {
+      "post": {
+        "description": "Re-enqueue an interrupted run (\u00a75.3).\n\nRefuses while the lock is held even if the row says `INTERRUPTED`: the reaper and a\nslow worker can disagree for one tick, and the lock is the more current of the two.",
+        "operationId": "resume_run_endpoint_api_v1_runs__run_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume from the last checkpoint",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "description": "Fetch paginated list of submitted tasks.",
+        "operationId": "list_tasks_api_v1_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Tasks",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      },
+      "post": {
+        "description": "Submit a new multi-agent research task.",
+        "operationId": "create_task_api_v1_tasks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Task",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "delete": {
+        "description": "Delete a task record along with all associated logs and artifacts.",
+        "operationId": "delete_task_api_v1_tasks__task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Task",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      },
+      "get": {
+        "description": "Get status and result payload for a specific task.",
+        "operationId": "get_task_api_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Details",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      },
+      "patch": {
+        "description": "Update task lifecycle state, final result JSON, or error message.",
+        "operationId": "update_task_api_v1_tasks__task_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Task Status",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/runs": {
+      "get": {
+        "description": "Every run of a task.\n\nExactly one today, by the \"a Task is a Run\" convention \u2014 the endpoint exists in its\nplural form because that convention is temporary and the clients written against it\nshould not have to change when it ends.",
+        "operationId": "list_task_runs_api_v1_tasks__task_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List runs for a task",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      },
+      "post": {
+        "description": "Enqueue a run for `task_id` and return where to watch it.\n\nThree independent things stop this from starting the same run twice, and they cover\ndifferent windows: `Idempotency-Key` catches a retried HTTP request, the `ACTIVE_STATUSES`\ncheck catches a second deliberate dispatch, and arq's job id catches a race between two\nAPI processes. The run lock in the worker is the last line, for the case where all\nthree are somehow passed.",
+        "operationId": "create_run_api_v1_tasks__task_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start a run",
+        "tags": [
+          "Tasks & Workflows"
+        ]
+      }
+    },
+    "/api/v1/ws/tickets": {
+      "post": {
+        "description": "Exchange a bearer token for a single-use, run-scoped, 60-second ticket (\u00a79.3).",
+        "operationId": "create_ticket_api_v1_ws_tickets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WsTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WsTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mint a WebSocket ticket",
+        "tags": [
+          "Real-time Streaming"
+        ]
+      }
+    }
+  }
+}

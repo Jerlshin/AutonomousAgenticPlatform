@@ -1,0 +1,1923 @@
+{
+  "$defs": {
+    "ArtifactCreatedPayload": {
+      "properties": {
+        "artifact_id": {
+          "default": "",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "download_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Download Url"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "default": "",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "default": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "type": {
+          "default": "log",
+          "enum": [
+            "code",
+            "model",
+            "plot",
+            "report",
+            "metrics",
+            "log",
+            "bundle"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ArtifactCreatedPayload",
+      "type": "object"
+    },
+    "BudgetWarningPayload": {
+      "description": "Any budget crossing 80% (`RunEmitter.budget_warning`).",
+      "properties": {
+        "limit": {
+          "title": "Limit",
+          "type": "number"
+        },
+        "percent": {
+          "title": "Percent",
+          "type": "number"
+        },
+        "resource": {
+          "title": "Resource",
+          "type": "string"
+        },
+        "used": {
+          "title": "Used",
+          "type": "number"
+        }
+      },
+      "required": [
+        "resource",
+        "used",
+        "limit",
+        "percent"
+      ],
+      "title": "BudgetWarningPayload",
+      "type": "object"
+    },
+    "CodeRevisionPayload": {
+      "properties": {
+        "addresses_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The ErrorRecord.fingerprint this revision was written against.",
+          "title": "Addresses Error"
+        },
+        "diff": {
+          "default": "",
+          "description": "Unified diff against the previous revision. Empty for revision 1.",
+          "title": "Diff",
+          "type": "string"
+        },
+        "language": {
+          "default": "python",
+          "title": "Language",
+          "type": "string"
+        },
+        "lines_changed": {
+          "default": 0,
+          "title": "Lines Changed",
+          "type": "integer"
+        },
+        "path": {
+          "default": "main.py",
+          "title": "Path",
+          "type": "string"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "integer"
+        },
+        "sha256": {
+          "default": "",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "CodeRevisionPayload",
+      "type": "object"
+    },
+    "CriterionResultRef": {
+      "description": "One checked criterion. `observed is None` means the metric was never produced.",
+      "properties": {
+        "comparator": {
+          "title": "Comparator",
+          "type": "string"
+        },
+        "criterion_id": {
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "weight": {
+          "default": 1.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "metric",
+        "comparator",
+        "threshold",
+        "passed"
+      ],
+      "title": "CriterionResultRef",
+      "type": "object"
+    },
+    "DeliverableRef": {
+      "description": "One produced file, as `Deliverable` in `engine/state.py` serialises it.",
+      "properties": {
+        "artifact_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Id"
+        },
+        "artifact_type": {
+          "enum": [
+            "code",
+            "model",
+            "plot",
+            "report",
+            "metrics",
+            "log",
+            "bundle"
+          ],
+          "title": "Artifact Type",
+          "type": "string"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "artifact_type",
+        "path",
+        "sha256",
+        "size_bytes",
+        "mime_type"
+      ],
+      "title": "DeliverableRef",
+      "type": "object"
+    },
+    "ErrorPayload": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "recoverable": {
+          "default": true,
+          "title": "Recoverable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    },
+    "EvaluationCompletedPayload": {
+      "description": "The Evaluator's verdict. Same shape as `EvaluationRef`, sent on its own.",
+      "properties": {
+        "criteria_results": {
+          "items": {
+            "$ref": "#/$defs/CriterionResultRef"
+          },
+          "title": "Criteria Results",
+          "type": "array"
+        },
+        "decision": {
+          "enum": [
+            "ACCEPT",
+            "REFINE",
+            "REPLAN",
+            "ABORT"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "refine_directive": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refine Directive"
+        },
+        "replan_directive": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replan Directive"
+        },
+        "rubric": {
+          "items": {
+            "$ref": "#/$defs/RubricScoreRef"
+          },
+          "title": "Rubric",
+          "type": "array"
+        },
+        "rubric_mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric Mean"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "passed",
+        "score"
+      ],
+      "title": "EvaluationCompletedPayload",
+      "type": "object"
+    },
+    "EvaluationRef": {
+      "description": "`Verdict` in `engine/state.py`.",
+      "properties": {
+        "criteria_results": {
+          "items": {
+            "$ref": "#/$defs/CriterionResultRef"
+          },
+          "title": "Criteria Results",
+          "type": "array"
+        },
+        "decision": {
+          "enum": [
+            "ACCEPT",
+            "REFINE",
+            "REPLAN",
+            "ABORT"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "refine_directive": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refine Directive"
+        },
+        "replan_directive": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replan Directive"
+        },
+        "rubric": {
+          "items": {
+            "$ref": "#/$defs/RubricScoreRef"
+          },
+          "title": "Rubric",
+          "type": "array"
+        },
+        "rubric_mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric Mean"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "passed",
+        "score"
+      ],
+      "title": "EvaluationRef",
+      "type": "object"
+    },
+    "EventEnvelope": {
+      "description": "Every server\u2192client message (\u00a79.2).",
+      "properties": {
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "type"
+      ],
+      "title": "EventEnvelope",
+      "type": "object"
+    },
+    "HelloPayload": {
+      "description": "The first frame after accept. `last_seq` tells a fresh client where the run is.",
+      "properties": {
+        "heartbeat_s": {
+          "default": 20,
+          "title": "Heartbeat S",
+          "type": "integer"
+        },
+        "last_seq": {
+          "default": 0,
+          "title": "Last Seq",
+          "type": "integer"
+        },
+        "protocol": {
+          "const": "pluton.v1",
+          "default": "pluton.v1",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "run": {
+          "additionalProperties": true,
+          "title": "Run",
+          "type": "object"
+        }
+      },
+      "title": "HelloPayload",
+      "type": "object"
+    },
+    "InterruptRequestedPayload": {
+      "description": "A HITL gate opened. Expiry is treated as rejection (AGENTS.md \u00a79).",
+      "properties": {
+        "context": {
+          "additionalProperties": true,
+          "description": "Gate-specific body: the plan for after_plan, the source for before_sandbox_exec.",
+          "title": "Context",
+          "type": "object"
+        },
+        "expires_at": {
+          "default": "",
+          "description": "RFC 3339. The run is CANCELLED if no decision arrives by then.",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "gate": {
+          "enum": [
+            "after_plan",
+            "before_sandbox_exec",
+            "before_model_registration",
+            "on_replan"
+          ],
+          "title": "Gate",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "prompt": {
+          "default": "",
+          "title": "Prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate"
+      ],
+      "title": "InterruptRequestedPayload",
+      "type": "object"
+    },
+    "MetricLoggedPayload": {
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "mlflow_run_id": {
+          "default": "",
+          "title": "Mlflow Run Id",
+          "type": "string"
+        },
+        "step": {
+          "default": 0,
+          "title": "Step",
+          "type": "integer"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "MetricLoggedPayload",
+      "type": "object"
+    },
+    "MlflowRef": {
+      "description": "`MLflowRef` in `engine/state.py` (MLOPS.md \u00a74).",
+      "properties": {
+        "artifact_uri": {
+          "default": "",
+          "title": "Artifact Uri",
+          "type": "string"
+        },
+        "experiment_id": {
+          "default": "",
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "experiment_name": {
+          "default": "",
+          "title": "Experiment Name",
+          "type": "string"
+        },
+        "logged_metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Logged Metrics",
+          "type": "object"
+        },
+        "logged_params": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Logged Params",
+          "type": "object"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "parent_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Run Id"
+        },
+        "registered_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registered Model"
+        },
+        "run_id": {
+          "default": "",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "ui_url": {
+          "default": "",
+          "title": "Ui Url",
+          "type": "string"
+        }
+      },
+      "title": "MlflowRef",
+      "type": "object"
+    },
+    "NodeCompletedPayload": {
+      "properties": {
+        "degraded": {
+          "default": false,
+          "description": "The deterministic fallback ran. Materially different from success (AGENTS.md \u00a78.2).",
+          "title": "Degraded",
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "default": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "llm_calls": {
+          "default": 0,
+          "title": "Llm Calls",
+          "type": "integer"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "step_seq": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Seq"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        },
+        "tokens_in": {
+          "default": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "default": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "title": "NodeCompletedPayload",
+      "type": "object"
+    },
+    "NodeErrorRef": {
+      "properties": {
+        "fingerprint": {
+          "default": "",
+          "description": "Stable across incidental detail \u2014 the key the stagnation rule counts.",
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "title": "NodeErrorRef",
+      "type": "object"
+    },
+    "NodeFailedPayload": {
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/NodeErrorRef"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "policy": {
+          "default": "",
+          "title": "Policy",
+          "type": "string"
+        },
+        "step_seq": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Seq"
+        },
+        "will_retry": {
+          "default": false,
+          "title": "Will Retry",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node",
+        "error"
+      ],
+      "title": "NodeFailedPayload",
+      "type": "object"
+    },
+    "NodeProgressPayload": {
+      "properties": {
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Percent"
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "title": "NodeProgressPayload",
+      "type": "object"
+    },
+    "NodeRetryingPayload": {
+      "properties": {
+        "attempt": {
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "backoff_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backoff Ms"
+        },
+        "max_attempts": {
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "attempt",
+        "max_attempts"
+      ],
+      "title": "NodeRetryingPayload",
+      "type": "object"
+    },
+    "NodeStartedPayload": {
+      "properties": {
+        "agent": {
+          "default": "",
+          "title": "Agent",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "phase": {
+          "default": "",
+          "title": "Phase",
+          "type": "string"
+        },
+        "plan_step_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Step Id"
+        },
+        "step_seq": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Seq"
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "title": "NodeStartedPayload",
+      "type": "object"
+    },
+    "PingPayload": {
+      "description": "Empty. Present so every event type has a registry entry.",
+      "properties": {},
+      "title": "PingPayload",
+      "type": "object"
+    },
+    "PlanCreatedPayload": {
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "primary_metric": {
+          "default": "",
+          "title": "Primary Metric",
+          "type": "string"
+        },
+        "revision": {
+          "default": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/PlanStepRef"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "success_criteria": {
+          "items": {
+            "$ref": "#/$defs/SuccessCriterionRef"
+          },
+          "title": "Success Criteria",
+          "type": "array"
+        },
+        "task_kind": {
+          "default": "",
+          "title": "Task Kind",
+          "type": "string"
+        }
+      },
+      "title": "PlanCreatedPayload",
+      "type": "object"
+    },
+    "PlanRevisedPayload": {
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "diff": {
+          "default": "",
+          "title": "Diff",
+          "type": "string"
+        },
+        "primary_metric": {
+          "default": "",
+          "title": "Primary Metric",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "revision": {
+          "default": 2,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/PlanStepRef"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "success_criteria": {
+          "items": {
+            "$ref": "#/$defs/SuccessCriterionRef"
+          },
+          "title": "Success Criteria",
+          "type": "array"
+        },
+        "task_kind": {
+          "default": "",
+          "title": "Task Kind",
+          "type": "string"
+        }
+      },
+      "title": "PlanRevisedPayload",
+      "type": "object"
+    },
+    "PlanStepRef": {
+      "properties": {
+        "acceptance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Acceptance",
+          "type": "array"
+        },
+        "attempts": {
+          "default": 0,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "index": {
+          "default": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "default": "implement",
+          "enum": [
+            "research",
+            "implement",
+            "train",
+            "evaluate",
+            "report"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "status": {
+          "default": "PENDING",
+          "enum": [
+            "PENDING",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "SKIPPED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PlanStepRef",
+      "type": "object"
+    },
+    "ReplayCompletePayload": {
+      "properties": {
+        "through_seq": {
+          "title": "Through Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "through_seq"
+      ],
+      "title": "ReplayCompletePayload",
+      "type": "object"
+    },
+    "ReplayGapPayload": {
+      "description": "The cursor predates retention; the client resynchronises from a snapshot.",
+      "properties": {
+        "oldest_available": {
+          "title": "Oldest Available",
+          "type": "integer"
+        },
+        "requested_after": {
+          "title": "Requested After",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requested_after",
+        "oldest_available"
+      ],
+      "title": "ReplayGapPayload",
+      "type": "object"
+    },
+    "RetrievalHitRef": {
+      "properties": {
+        "collection": {
+          "default": "",
+          "title": "Collection",
+          "type": "string"
+        },
+        "score": {
+          "default": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "section": {
+          "default": "",
+          "title": "Section",
+          "type": "string"
+        },
+        "source_uri": {
+          "default": "",
+          "title": "Source Uri",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "trust_level": {
+          "default": "curated",
+          "title": "Trust Level",
+          "type": "string"
+        }
+      },
+      "title": "RetrievalHitRef",
+      "type": "object"
+    },
+    "RetrievalResultsPayload": {
+      "properties": {
+        "hits": {
+          "items": {
+            "$ref": "#/$defs/RetrievalHitRef"
+          },
+          "title": "Hits",
+          "type": "array"
+        },
+        "node": {
+          "default": "researcher",
+          "title": "Node",
+          "type": "string"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "RetrievalResultsPayload",
+      "type": "object"
+    },
+    "RubricScoreRef": {
+      "description": "Advisory only. It never influences `passed` (AGENTS.md \u00a77.6).",
+      "properties": {
+        "dimension": {
+          "title": "Dimension",
+          "type": "string"
+        },
+        "justification": {
+          "title": "Justification",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dimension",
+        "score",
+        "justification"
+      ],
+      "title": "RubricScoreRef",
+      "type": "object"
+    },
+    "RunCancelledPayload": {
+      "description": "Terminal `CANCELLED`, from the worker or from `POST /runs/{id}/cancel`.",
+      "properties": {
+        "bundle_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Url"
+        },
+        "cancelled_by": {
+          "default": "operator",
+          "enum": [
+            "operator",
+            "system"
+          ],
+          "title": "Cancelled By",
+          "type": "string"
+        },
+        "deliverables": {
+          "items": {
+            "$ref": "#/$defs/DeliverableRef"
+          },
+          "title": "Deliverables",
+          "type": "array"
+        },
+        "evaluation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mlflow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MlflowRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "default": "CANCELLED",
+          "title": "Status",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsageRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RunCancelledPayload",
+      "type": "object"
+    },
+    "RunCompletedPayload": {
+      "description": "Terminal `SUCCEEDED` / `PARTIAL`. `worker/jobs._terminal_payload` builds it.",
+      "properties": {
+        "bundle_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Url"
+        },
+        "deliverables": {
+          "items": {
+            "$ref": "#/$defs/DeliverableRef"
+          },
+          "title": "Deliverables",
+          "type": "array"
+        },
+        "evaluation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mlflow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MlflowRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsageRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "RunCompletedPayload",
+      "type": "object"
+    },
+    "RunFailedPayload": {
+      "description": "Terminal `FAILED`, and the `INTERRUPTED` frame the reaper emits (`worker/cron.py`).",
+      "properties": {
+        "bundle_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Url"
+        },
+        "deliverables": {
+          "items": {
+            "$ref": "#/$defs/DeliverableRef"
+          },
+          "title": "Deliverables",
+          "type": "array"
+        },
+        "dossier_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dossier Url"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "evaluation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "last_node": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Node"
+        },
+        "mlflow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MlflowRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resumable": {
+          "default": false,
+          "description": "True on the reaper's frame: the run stopped with a worker, not with itself.",
+          "title": "Resumable",
+          "type": "boolean"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsageRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "RunFailedPayload",
+      "type": "object"
+    },
+    "RunPhasePayload": {
+      "properties": {
+        "phase": {
+          "title": "Phase",
+          "type": "string"
+        },
+        "previous_phase": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Phase"
+        }
+      },
+      "required": [
+        "phase"
+      ],
+      "title": "RunPhasePayload",
+      "type": "object"
+    },
+    "RunQueuedPayload": {
+      "properties": {
+        "position": {
+          "default": 0,
+          "title": "Position",
+          "type": "integer"
+        }
+      },
+      "title": "RunQueuedPayload",
+      "type": "object"
+    },
+    "RunSnapshotPayload": {
+      "additionalProperties": true,
+      "description": "The full `GET /runs/{id}` body.\n\nDeliberately open: the authority on this shape is `RunRead` in `schemas/run.py`,\nwhich OpenAPI already exports, and re-declaring its fields here would be exactly the\nhand-written duplicate \u00a74.1 forbids. The generator special-cases this one and emits\nthe `RunRead` alias from `rest.ts` instead of an interface built from this model.",
+      "properties": {},
+      "title": "RunSnapshotPayload",
+      "type": "object"
+    },
+    "RunStartedPayload": {
+      "properties": {
+        "model_routing": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Role \u2192 model, e.g. {\"planner\": \"qwen2.5:14b-instruct\"} (ARCHITECTURE.md \u00a711.1).",
+          "title": "Model Routing",
+          "type": "object"
+        },
+        "resumed": {
+          "default": false,
+          "title": "Resumed",
+          "type": "boolean"
+        },
+        "worker_id": {
+          "default": "",
+          "title": "Worker Id",
+          "type": "string"
+        }
+      },
+      "title": "RunStartedPayload",
+      "type": "object"
+    },
+    "SandboxExitPayload": {
+      "properties": {
+        "duration_ms": {
+          "default": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "execution_id": {
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "max_rss_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Rss Bytes"
+        },
+        "oom_killed": {
+          "default": false,
+          "title": "Oom Killed",
+          "type": "boolean"
+        },
+        "timed_out": {
+          "default": false,
+          "title": "Timed Out",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "execution_id"
+      ],
+      "title": "SandboxExitPayload",
+      "type": "object"
+    },
+    "SandboxLimitsRef": {
+      "properties": {
+        "cpus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpus"
+        },
+        "memory": {
+          "default": "",
+          "title": "Memory",
+          "type": "string"
+        },
+        "network": {
+          "default": "",
+          "title": "Network",
+          "type": "string"
+        },
+        "timeout_s": {
+          "default": 0,
+          "title": "Timeout S",
+          "type": "integer"
+        }
+      },
+      "title": "SandboxLimitsRef",
+      "type": "object"
+    },
+    "SandboxLinePayload": {
+      "description": "`sandbox.stdout` and `sandbox.stderr`. Truncated to 4 KiB per frame (\u00a79.1).",
+      "properties": {
+        "execution_id": {
+          "default": "",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "line": {
+          "title": "Line",
+          "type": "string"
+        },
+        "ts": {
+          "default": "",
+          "title": "Ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "line"
+      ],
+      "title": "SandboxLinePayload",
+      "type": "object"
+    },
+    "SandboxStartedPayload": {
+      "properties": {
+        "execution_id": {
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "image": {
+          "default": "",
+          "title": "Image",
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/SandboxLimitsRef"
+        },
+        "profile": {
+          "default": "exec",
+          "enum": [
+            "exec",
+            "train",
+            "train-tracked"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "revision": {
+          "default": 0,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "execution_id"
+      ],
+      "title": "SandboxStartedPayload",
+      "type": "object"
+    },
+    "SandboxTruncatedPayload": {
+      "properties": {
+        "bytes_dropped": {
+          "title": "Bytes Dropped",
+          "type": "integer"
+        },
+        "execution_id": {
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ],
+          "title": "Stream",
+          "type": "string"
+        }
+      },
+      "required": [
+        "execution_id",
+        "stream",
+        "bytes_dropped"
+      ],
+      "title": "SandboxTruncatedPayload",
+      "type": "object"
+    },
+    "SuccessCriterionRef": {
+      "description": "The Planner's contract for one criterion, before anything has been measured.",
+      "properties": {
+        "comparator": {
+          "enum": [
+            "gte",
+            "lte",
+            "gt",
+            "lt",
+            "eq",
+            "approx"
+          ],
+          "title": "Comparator",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "tolerance": {
+          "default": 0.0,
+          "title": "Tolerance",
+          "type": "number"
+        },
+        "weight": {
+          "default": 1.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "metric",
+        "comparator",
+        "threshold"
+      ],
+      "title": "SuccessCriterionRef",
+      "type": "object"
+    },
+    "TokenDeltaPayload": {
+      "description": "Coalesced at 80 ms / 64 chars by `RunEmitter.emit_token` (\u00a79.1).",
+      "properties": {
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "text"
+      ],
+      "title": "TokenDeltaPayload",
+      "type": "object"
+    },
+    "ToolCompletedPayload": {
+      "properties": {
+        "duration_ms": {
+          "default": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "ok": {
+          "default": true,
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "result_digest": {
+          "default": "",
+          "title": "Result Digest",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "tool"
+      ],
+      "title": "ToolCompletedPayload",
+      "type": "object"
+    },
+    "ToolStartedPayload": {
+      "properties": {
+        "args_digest": {
+          "default": "",
+          "title": "Args Digest",
+          "type": "string"
+        },
+        "node": {
+          "title": "Node",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "tool"
+      ],
+      "title": "ToolStartedPayload",
+      "type": "object"
+    },
+    "UsageRef": {
+      "description": "`Usage` in `engine/state.py`, as the terminal payload serialises it.",
+      "properties": {
+        "llm_calls": {
+          "default": 0,
+          "title": "Llm Calls",
+          "type": "integer"
+        },
+        "node_visits": {
+          "default": 0,
+          "title": "Node Visits",
+          "type": "integer"
+        },
+        "sandbox_executions": {
+          "default": 0,
+          "title": "Sandbox Executions",
+          "type": "integer"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "tokens_in": {
+          "default": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "default": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "title": "UsageRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://pluton.local/schemas/events.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Generated from backend/app/schemas/events.py by scripts/gen_event_types.py. `payloads` maps each event type to the $def describing its payload.",
+  "payloads": {
+    "artifact.created": "ArtifactCreatedPayload",
+    "budget.warning": "BudgetWarningPayload",
+    "code.revision": "CodeRevisionPayload",
+    "error": "ErrorPayload",
+    "evaluation.completed": "EvaluationCompletedPayload",
+    "hello": "HelloPayload",
+    "interrupt.requested": "InterruptRequestedPayload",
+    "metric.logged": "MetricLoggedPayload",
+    "node.completed": "NodeCompletedPayload",
+    "node.failed": "NodeFailedPayload",
+    "node.progress": "NodeProgressPayload",
+    "node.retrying": "NodeRetryingPayload",
+    "node.started": "NodeStartedPayload",
+    "ping": "PingPayload",
+    "plan.created": "PlanCreatedPayload",
+    "plan.revised": "PlanRevisedPayload",
+    "replay.complete": "ReplayCompletePayload",
+    "replay.gap": "ReplayGapPayload",
+    "retrieval.results": "RetrievalResultsPayload",
+    "run.cancelled": "RunCancelledPayload",
+    "run.completed": "RunCompletedPayload",
+    "run.failed": "RunFailedPayload",
+    "run.phase": "RunPhasePayload",
+    "run.queued": "RunQueuedPayload",
+    "run.snapshot": "RunSnapshotPayload",
+    "run.started": "RunStartedPayload",
+    "sandbox.exit": "SandboxExitPayload",
+    "sandbox.started": "SandboxStartedPayload",
+    "sandbox.stderr": "SandboxLinePayload",
+    "sandbox.stdout": "SandboxLinePayload",
+    "sandbox.truncated": "SandboxTruncatedPayload",
+    "token.delta": "TokenDeltaPayload",
+    "tool.completed": "ToolCompletedPayload",
+    "tool.started": "ToolStartedPayload"
+  },
+  "title": "pluton.v1 event payloads"
+}

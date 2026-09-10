@@ -219,7 +219,11 @@ check-secrets: ## Fail if a generated secret has leaked into a tracked file (§1
 	@$(PY) scripts/check_secrets.py
 
 .PHONY: check
-check: lint typecheck test check-docs check-env-example check-dashboards check-secrets ## Everything CI runs
+check: lint typecheck test check-docs check-env-example check-dashboards check-secrets \
+       openapi-check check-event-types check-graph-fixture ## Everything CI runs
+# `fe-check` is deliberately not folded in here: it needs `npm install` to have run.
+# The two gates that are folded in are pure Python and catch the failure that matters
+# most — a backend rename that silently breaks the dashboard's typed contract (§4.4).
 
 .PHONY: clean
 clean: ## Remove caches and build detritus
@@ -349,3 +353,74 @@ fe-dev: ## Run the Next.js dev server
 		printf "$(C_WARN)frontend/package.json is missing or empty.$(C_OFF)\n"; exit 0; \
 	fi
 	cd frontend && npm run dev
+
+# ---- The typed contract (docs/FRONTEND.md §4) --------------------------------
+#
+# Both generated files are committed, which is what keeps a clean clone type-checkable
+# with no backend running — and that is what makes the drift gates cheap enough that
+# anyone actually runs them.
+
+.PHONY: openapi
+openapi: ## Dump backend/openapi.json from the FastAPI app (no server needed)
+	$(PY) scripts/dump_openapi.py
+
+.PHONY: openapi-check
+openapi-check: ## Fail if backend/openapi.json is stale
+	$(PY) scripts/dump_openapi.py --check
+
+.PHONY: fe-types
+fe-types: openapi ## Generate frontend REST types from the OpenAPI document
+	cd frontend && npx openapi-typescript ../backend/openapi.json -o src/lib/api.d.ts
+
+.PHONY: check-fe-types
+check-fe-types: ## Fail if the committed REST types have drifted
+	cd frontend && npx openapi-typescript ../backend/openapi.json -o .api.d.ts.check \
+	  && diff -u src/lib/api.d.ts .api.d.ts.check && rm -f .api.d.ts.check
+
+.PHONY: gen-event-types
+gen-event-types: ## Generate frontend WebSocket protocol types from events.py
+	$(PY) scripts/gen_event_types.py
+
+.PHONY: check-event-types
+check-event-types: ## Fail if the committed WS types have drifted
+	$(PY) scripts/gen_event_types.py --check
+
+.PHONY: gen-graph-fixture
+gen-graph-fixture: ## Export the compiled graph's topology as a frontend test fixture
+	$(PY) scripts/gen_graph_fixture.py
+
+.PHONY: check-graph-fixture
+check-graph-fixture: ## Fail if the graph topology fixture has drifted from engine/graph.py
+	$(PY) scripts/gen_graph_fixture.py --check
+
+# ---- Frontend lifecycle ------------------------------------------------------
+
+.PHONY: fe-lint
+fe-lint: ## Lint the frontend
+	cd frontend && npm run lint
+
+.PHONY: fe-typecheck
+fe-typecheck: ## tsc --noEmit
+	cd frontend && npm run typecheck
+
+.PHONY: fe-test
+fe-test: ## Frontend unit, protocol and store tests
+	cd frontend && npm run test
+
+.PHONY: fe-e2e
+fe-e2e: ## Playwright end-to-end against recorded stream fixtures
+	cd frontend && npm run test:e2e
+
+.PHONY: fe-build
+fe-build: ## Production build
+	cd frontend && npm run build
+
+.PHONY: fe-check
+fe-check: check-fe-types check-event-types check-graph-fixture fe-lint fe-typecheck fe-test fe-build ## Everything CI runs for the frontend
+
+.PHONY: record-stream
+record-stream: ## Record a run's event log as a test fixture: make record-stream RUN=<run_id> [NAME=<name>]
+	@if [ -z "$(RUN)" ]; then \
+		printf "$(C_ERR)Usage: make record-stream RUN=<run_id> [NAME=<fixture-name>]$(C_OFF)\n"; exit 1; \
+	fi
+	$(PY) scripts/record_stream.py $(RUN) $(if $(NAME),--name $(NAME),)

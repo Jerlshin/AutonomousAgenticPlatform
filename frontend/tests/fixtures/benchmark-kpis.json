@@ -1,0 +1,107 @@
+{
+  "$comment": "A shared contract fixture, asserted by BOTH suites: backend/tests/test_benchmark_kpis.py runs api/v1/benchmarks.compute_kpis over `results` and frontend/tests/contract/benchmarkKpis.test.ts runs lib/benchmarks.ts::computeKpis over the same rows. Both must reproduce `kpis`. It is hand-authored rather than generated because the two implementations must agree with a third, independent statement of the formula — a fixture emitted by one of them could only ever prove that implementation agrees with itself. Rows exercise every branch: a first-pass success, a success needing debug iterations, a replan, a trap correctly refused, a trap fallen for, and a failure with no metrics at all.",
+  "suite": "core",
+  "results": [
+    {
+      "id": "00000000-0000-4000-8000-000000000000",
+      "suite": "core",
+      "case_id": "iris-baseline",
+      "task_id": null,
+      "run_id": "11111111-1111-4111-8111-111111111111",
+      "outcome": "SUCCEEDED",
+      "passed": true,
+      "metrics": { "debug_iterations": 0, "replans": 0, "accuracy": 0.97 },
+      "checks": [
+        { "name": "metric:accuracy", "passed": true, "detail": "0.97 >= 0.90" }
+      ],
+      "duration_seconds": 142,
+      "created_at": "2026-03-01T12:00:00+00:00"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "suite": "core",
+      "case_id": "titanic-debug",
+      "task_id": null,
+      "run_id": "22222222-2222-4222-8222-222222222222",
+      "outcome": "SUCCEEDED",
+      "passed": true,
+      "metrics": { "debug_iterations": 2, "replans": 0, "f1_macro": 0.81 },
+      "checks": [],
+      "duration_seconds": 531,
+      "created_at": "2026-03-01T11:58:00+00:00"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "suite": "core",
+      "case_id": "housing-replan",
+      "task_id": null,
+      "run_id": null,
+      "outcome": "SUCCEEDED",
+      "passed": false,
+      "metrics": { "debug_iterations": 1, "replans": 1 },
+      "checks": [
+        { "name": "metric:r2", "passed": false, "detail": "0.61 < 0.70" },
+        { "name": "artifact:model.pkl", "passed": true, "detail": "" }
+      ],
+      "duration_seconds": 880,
+      "created_at": "2026-03-01T11:55:00+00:00"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "suite": "core",
+      "case_id": "imbalance-trap",
+      "task_id": null,
+      "run_id": null,
+      "outcome": "PARTIAL",
+      "passed": true,
+      "metrics": { "debug_iterations": 0, "replans": 0 },
+      "checks": [],
+      "duration_seconds": 95,
+      "created_at": "2026-03-01T11:52:00+00:00"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "suite": "core",
+      "case_id": "leakage-trap",
+      "task_id": null,
+      "run_id": null,
+      "outcome": "SUCCEEDED",
+      "passed": false,
+      "metrics": { "debug_iterations": 1, "replans": 0 },
+      "checks": [],
+      "duration_seconds": 210,
+      "created_at": "2026-03-01T11:50:00+00:00"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "suite": "core",
+      "case_id": "ingest-smoke",
+      "task_id": null,
+      "run_id": null,
+      "outcome": "FAILED",
+      "passed": false,
+      "metrics": {},
+      "checks": [],
+      "duration_seconds": 17,
+      "created_at": "2026-03-01T11:47:00+00:00"
+    }
+  ],
+  "kpis": {
+    "cases_scored": 6,
+    "expectations_met": 3,
+    "task_success_rate": 0.6666666666666666,
+    "judgement_score": "1/2",
+    "mean_debug_iterations": 1.0,
+    "first_pass_rate": 0.16666666666666666,
+    "replan_rate": 0.16666666666666666
+  },
+  "$derivation": {
+    "cases_scored": "6 rows, one per case.",
+    "expectations_met": "passed=true: iris-baseline, titanic-debug, imbalance-trap = 3.",
+    "task_success_rate": "outcome=SUCCEEDED: iris, titanic, housing, leakage = 4; 4/6.",
+    "judgement_score": "traps are `-trap` suffixed or PARTIAL: imbalance-trap, leakage-trap = 2; imbalance-trap passed = 1/2.",
+    "mean_debug_iterations": "over SUCCEEDED only: (0 + 2 + 1 + 1) / 4 = 1.0.",
+    "first_pass_rate": "SUCCEEDED with zero debug iterations = iris only; divided by ALL cases: 1/6.",
+    "replan_rate": "rows with a non-zero replans counter = housing-replan; 1/6."
+  }
+}
