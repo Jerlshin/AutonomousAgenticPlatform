@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: autonomous-ai-backend
+Version: 0.1.0
+Summary: Autonomous Multi-Agent AI R&D Platform Backend
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: pydantic>=2.9
+Requires-Dist: pydantic-settings>=2.5
+Requires-Dist: sqlalchemy[asyncio]>=2.0.35
+Requires-Dist: asyncpg>=0.29
+Requires-Dist: alembic>=1.13
+Requires-Dist: redis>=5.0
+Requires-Dist: arq>=0.26
+Requires-Dist: httpx>=0.27
+Requires-Dist: langgraph>=0.2
+Requires-Dist: psycopg[binary]>=3.1.0
+Requires-Dist: langgraph-checkpoint-postgres>=2.0
+Requires-Dist: langchain-core>=0.3
+Requires-Dist: langchain-ollama>=0.2
+Requires-Dist: qdrant-client>=1.9
+Requires-Dist: docker>=7.1
+Requires-Dist: mlflow>=2.15
+Requires-Dist: jinja2>=3.1
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: numpy>=1.26
+Requires-Dist: scikit-learn>=1.5
+Requires-Dist: prometheus-client>=0.20
+Requires-Dist: structlog>=24.1
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Requires-Dist: mypy>=1.11; extra == "dev"
+Requires-Dist: types-PyYAML>=6.0; extra == "dev"

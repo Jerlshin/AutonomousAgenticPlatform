@@ -219,3 +219,47 @@ jobs:
         # `--if-present`: the test script lands with the first component test, and a
         # missing script must not fail a job whose other three steps are green.
         run: cd frontend && npm test --if-present
+
+  # ---------------------------------------------------------------------------
+  #  Notification on completion (Success or Failure)
+  # ---------------------------------------------------------------------------
+  notify-ci-status:
+    name: Notify CI Status
+    runs-on: ubuntu-latest
+    needs: [backend-lint, backend-typecheck, backend-test, contracts, frontend]
+    if: always()
+    steps:
+      - name: Determine Status
+        id: status
+        run: |
+          RESULTS="${{ needs.backend-lint.result }} ${{ needs.backend-typecheck.result }} ${{ needs.backend-test.result }} ${{ needs.contracts.result }} ${{ needs.frontend.result }}"
+          if echo "$RESULTS" | grep -qE "failure|cancelled"; then
+            echo "state=FAILED" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=SUCCESS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send CI Notification Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "[${{ steps.status.outputs.state }}] CI Pipeline: ${{ github.repository }}"
+          to: asjved.8385@gmail.com
+          from: GitHub Actions Alert
+          body: |
+            CI Pipeline finished with status: ${{ steps.status.outputs.state }}
+
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Run Details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Job Breakdown:
+            - Backend Lint: ${{ needs.backend-lint.result }}
+            - Backend Typecheck: ${{ needs.backend-typecheck.result }}
+            - Backend Test: ${{ needs.backend-test.result }}
+            - Contracts: ${{ needs.contracts.result }}
+            - Frontend: ${{ needs.frontend.result }}

@@ -17,9 +17,9 @@ machine-learning experiments — entirely on local, open-source infrastructure.*
 
 Give it a goal in plain English:
 
-> *"Build and evaluate a classifier on the bundled breast_cancer dataset. Target ≥95% test accuracy
+> _"Build and evaluate a classifier on the bundled breast_cancer dataset. Target ≥95% test accuracy
 > and ≥0.94 macro F1. Produce a confusion matrix and a short report on which features drive the
-> decision."*
+> decision."_
 
 A graph of specialised agents plans the work, retrieves the API knowledge it needs, writes a
 Python program, executes it inside a locked-down container, debugs its own failures, logs the
@@ -32,15 +32,15 @@ You watch all of it happen live over a WebSocket.
 
 Not a log file and a number — an actual deliverable:
 
-| | |
-|---|---|
-| **`REPORT.md`** | Objective, results against every criterion, approach, *what went wrong and how it was fixed*, reproduction instructions, limitations |
-| **`main.py`** | The exact source that produced the numbers |
-| **`model/`** | A loadable MLflow model, registered when it meets its criteria |
-| **`metrics.json`** | Schema-validated metrics, params, dataset hash, runtime |
-| **Plots** | Confusion matrices, ROC curves, learning curves |
-| **MLflow run** | Parent run per task, nested child run per attempt, fully tagged |
-| **`bundle.zip`** | Every file above, written to the run's artifact directory |
+|                    |                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`REPORT.md`**    | Objective, results against every criterion, approach, _what went wrong and how it was fixed_, reproduction instructions, limitations |
+| **`main.py`**      | The exact source that produced the numbers                                                                                           |
+| **`model/`**       | A loadable MLflow model, registered when it meets its criteria                                                                       |
+| **`metrics.json`** | Schema-validated metrics, params, dataset hash, runtime                                                                              |
+| **Plots**          | Confusion matrices, ROC curves, learning curves                                                                                      |
+| **MLflow run**     | Parent run per task, nested child run per attempt, fully tagged                                                                      |
+| **`bundle.zip`**   | Every file above, written to the run's artifact directory                                                                            |
 
 **Every run produces a deliverable — including failed ones.** A run that never got the code working
 still returns a report explaining what was attempted, what broke, and what was tried. That
@@ -111,16 +111,16 @@ graph LR
     style RP fill:#14b8a615,stroke:#0d9488
 ```
 
-| Agent | Model | Does |
-|---|---|---|
-| 🧠 **Planner** | `qwen2.5:14b-instruct` | Decomposes the goal, binds steps to real datasets, and writes the success-criteria contract |
-| 🔎 **Researcher** | `llama3.1:8b` | Hybrid retrieval (dense + sparse, RRF-fused) over docs, verified code exemplars, and episodic run memory. **Extracts verbatim; never generates API signatures.** |
-| ⌨️ **Coder** | `qwen2.5-coder:7b` | Writes one self-contained program obeying the sandbox I/O contract |
-| 📦 **Sandbox** | *none* | Static validation, container launch, live output streaming, deterministic outcome classification |
-| 🐛 **Debugger** | `qwen2.5-coder:7b` | Diagnoses from a structured error record, consults past fixes, issues a targeted fix directive. **Writes no code.** |
-| 📊 **MLOps** | *none* | Validates `metrics.json`, logs to MLflow, registers models |
-| ⚖️ **Evaluator** | `llama3.1:8b` *(advisory)* | Computes hard criteria in Python; adds a rubric that can never overturn the arithmetic |
-| 📝 **Reporter** | `llama3.1:8b` | Writes the human deliverable and records fixes into run memory |
+| Agent             | Model                      | Does                                                                                                                                                             |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Planner**    | `qwen2.5:14b-instruct`     | Decomposes the goal, binds steps to real datasets, and writes the success-criteria contract                                                                      |
+| 🔎 **Researcher** | `llama3.1:8b`              | Hybrid retrieval (dense + sparse, RRF-fused) over docs, verified code exemplars, and episodic run memory. **Extracts verbatim; never generates API signatures.** |
+| ⌨️ **Coder**      | `qwen2.5-coder:7b`         | Writes one self-contained program obeying the sandbox I/O contract                                                                                               |
+| 📦 **Sandbox**    | _none_                     | Static validation, container launch, live output streaming, deterministic outcome classification                                                                 |
+| 🐛 **Debugger**   | `qwen2.5-coder:7b`         | Diagnoses from a structured error record, consults past fixes, issues a targeted fix directive. **Writes no code.**                                              |
+| 📊 **MLOps**      | _none_                     | Validates `metrics.json`, logs to MLflow, registers models                                                                                                       |
+| ⚖️ **Evaluator**  | `llama3.1:8b` _(advisory)_ | Computes hard criteria in Python; adds a rubric that can never overturn the arithmetic                                                                           |
+| 📝 **Reporter**   | `llama3.1:8b`              | Writes the human deliverable and records fixes into run memory                                                                                                   |
 
 Full node contracts, state schema, prompts, routing tables, and termination proof:
 [`docs/AGENTS.md`](./docs/AGENTS.md).
@@ -129,20 +129,20 @@ Full node contracts, state schema, prompts, routing tables, and termination proo
 
 ## Tech stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Agent orchestration | **LangGraph** | Cyclic graphs, typed state channels, first-class checkpointing and interrupts |
-| Local inference | **Ollama** + Llama 3.1 / Qwen 2.5 | Zero API cost, runs on consumer hardware, per-role model routing |
-| API | **FastAPI** + Uvicorn | Async-first, native WebSockets, OpenAPI for free |
-| Task queue | **arq** | asyncio-native; Celery's async story does not fit this stack ([ADR-002](./notes.md#adr-002--dispatchexecute-split-with-arq-not-celery-not-in-request)) |
-| Relational store | **PostgreSQL 16** + SQLAlchemy 2.0 + Alembic | Runs, steps, artifacts, evaluations, and LangGraph checkpoints |
-| Cache · queue · events | **Redis 7** | arq backend, per-run event streams with replay, distributed locks |
-| Vector store | **Qdrant** | Native hybrid search with RRF fusion — essential for retrieving exact API names |
-| Experiment tracking | **MLflow 2.12** | Postgres backend, proxied artifacts, model registry with alias promotion |
-| Execution isolation | **Docker** | Network-less, read-only, non-root, capability-dropped, resource-capped containers |
-| Frontend | **Next.js 15** + React 19 + TypeScript + Tailwind CSS v4 | Real-time dashboard over a native WebSocket — see [`docs/FRONTEND.md`](./docs/FRONTEND.md) |
-| Observability | **Prometheus** + **Grafana** + cAdvisor | Run pipeline, LLM performance, sandbox health, retrieval quality — five provisioned dashboards |
-| CI | **GitHub Actions** | Lint, type-check, test, build, compose smoke test |
+| Layer                  | Choice                                                   | Why                                                                                                                                                    |
+| ---------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Agent orchestration    | **LangGraph**                                            | Cyclic graphs, typed state channels, first-class checkpointing and interrupts                                                                          |
+| Local inference        | **Ollama** + Llama 3.1 / Qwen 2.5                        | Zero API cost, runs on consumer hardware, per-role model routing                                                                                       |
+| API                    | **FastAPI** + Uvicorn                                    | Async-first, native WebSockets, OpenAPI for free                                                                                                       |
+| Task queue             | **arq**                                                  | asyncio-native; Celery's async story does not fit this stack ([ADR-002](./notes.md#adr-002--dispatchexecute-split-with-arq-not-celery-not-in-request)) |
+| Relational store       | **PostgreSQL 16** + SQLAlchemy 2.0 + Alembic             | Runs, steps, artifacts, evaluations, and LangGraph checkpoints                                                                                         |
+| Cache · queue · events | **Redis 7**                                              | arq backend, per-run event streams with replay, distributed locks                                                                                      |
+| Vector store           | **Qdrant**                                               | Native hybrid search with RRF fusion — essential for retrieving exact API names                                                                        |
+| Experiment tracking    | **MLflow 2.12**                                          | Postgres backend, proxied artifacts, model registry with alias promotion                                                                               |
+| Execution isolation    | **Docker**                                               | Network-less, read-only, non-root, capability-dropped, resource-capped containers                                                                      |
+| Frontend               | **Next.js 15** + React 19 + TypeScript + Tailwind CSS v4 | Real-time dashboard over a native WebSocket — see [`docs/FRONTEND.md`](./docs/FRONTEND.md)                                                             |
+| Observability          | **Prometheus** + **Grafana** + cAdvisor                  | Run pipeline, LLM performance, sandbox health, retrieval quality — five provisioned dashboards                                                         |
+| CI                     | **GitHub Actions**                                       | Lint, type-check, test, build, compose smoke test                                                                                                      |
 
 100% free, open-source, and locally hostable. No API keys. No cloud account.
 
@@ -150,14 +150,14 @@ Full node contracts, state schema, prompts, routing tables, and termination proo
 
 ## Prerequisites
 
-| Requirement | Minimum | Recommended |
-|---|---|---|
-| **Docker** + Compose v2 | 24.x | Latest, 8 GB allocated to the VM |
-| **Python** | 3.11 | 3.11 |
-| **Ollama** | 0.3+, installed natively — [ollama.com/download](https://ollama.com/download) | |
-| **RAM** | 16 GB *(use the `small` model tier)* | 32 GB |
-| **Disk** | 40 GB free | 80 GB |
-| **Node.js** *(frontend only)* | 20 LTS | 22 LTS |
+| Requirement                   | Minimum                                                                       | Recommended                      |
+| ----------------------------- | ----------------------------------------------------------------------------- | -------------------------------- |
+| **Docker** + Compose v2       | 24.x                                                                          | Latest, 8 GB allocated to the VM |
+| **Python**                    | 3.11                                                                          | 3.11                             |
+| **Ollama**                    | 0.3+, installed natively — [ollama.com/download](https://ollama.com/download) |                                  |
+| **RAM**                       | 16 GB _(use the `small` model tier)_                                          | 32 GB                            |
+| **Disk**                      | 40 GB free                                                                    | 80 GB                            |
+| **Node.js** _(frontend only)_ | 20 LTS                                                                        | 22 LTS                           |
 
 > **Why Ollama is not containerised.** Docker Desktop on macOS cannot pass through the Metal GPU, so
 > a containerised Ollama runs CPU-only — a 5–15× slowdown. On Linux with NVIDIA, use
@@ -187,13 +187,13 @@ make health
 
 Then open:
 
-| | |
-|---|---|
-| API docs | http://localhost:8000/docs |
-| MLflow | http://localhost:5001 |
-| Qdrant dashboard | http://localhost:6333/dashboard |
-| Frontend | http://localhost:3000 (`make fe-install && make fe-dev` — see [`docs/FRONTEND.md`](./docs/FRONTEND.md) for build status) |
-| Grafana | http://localhost:3001 *(with `PROFILE=observability`)* |
+|                  |                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| API docs         | http://localhost:8000/docs                                                                                               |
+| MLflow           | http://localhost:5001                                                                                                    |
+| Qdrant dashboard | http://localhost:6333/dashboard                                                                                          |
+| Frontend         | http://localhost:3000 (`make fe-install && make fe-dev` — see [`docs/FRONTEND.md`](./docs/FRONTEND.md) for build status) |
+| Grafana          | http://localhost:3001 _(with `PROFILE=observability`)_                                                                   |
 
 ### Submit your first task
 
@@ -238,42 +238,42 @@ artifact directory and as `Artifact` rows in Postgres.
 
 `make help` lists them all. The ones you will actually use:
 
-| | |
-|---|---|
-| `make setup` | First run: generate secrets, pull models |
-| `make up` / `make down` | Start / stop the stack |
-| `make up PROFILE=observability` | Add Prometheus, Grafana, cAdvisor |
-| `make up-infra` | Data services only — for running the API natively with `make dev` |
-| `make migrate` | Apply Alembic migrations |
-| `make dev` | Run the API locally with reload |
-| `make worker` | Run the arq worker (also serves `/metrics`) |
-| `make fe-install` / `make fe-dev` | Install and run the Next.js dashboard |
-| `make doctor` | Diagnose the environment: Docker, Python, Ollama, `.env`, containers |
-| `make health` | Query the deep dependency health endpoint |
-| `make logs S=mlflow` | Tail one service |
-| `make bench` | Run the core-10 benchmark suite |
-| `make test` | Run the backend test suite |
-| `make check` | Everything CI runs: lint, typecheck, test, docs-link check, dashboard-drift check |
-| `make psql` / `make redis-cli` | Database shells |
-| `make nuke` | Delete all volumes (asks for confirmation) |
+|                                   |                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| `make setup`                      | First run: generate secrets, pull models                                          |
+| `make up` / `make down`           | Start / stop the stack                                                            |
+| `make up PROFILE=observability`   | Add Prometheus, Grafana, cAdvisor                                                 |
+| `make up-infra`                   | Data services only — for running the API natively with `make dev`                 |
+| `make migrate`                    | Apply Alembic migrations                                                          |
+| `make dev`                        | Run the API locally with reload                                                   |
+| `make worker`                     | Run the arq worker (also serves `/metrics`)                                       |
+| `make fe-install` / `make fe-dev` | Install and run the Next.js dashboard                                             |
+| `make doctor`                     | Diagnose the environment: Docker, Python, Ollama, `.env`, containers              |
+| `make health`                     | Query the deep dependency health endpoint                                         |
+| `make logs S=mlflow`              | Tail one service                                                                  |
+| `make bench`                      | Run the core-10 benchmark suite                                                   |
+| `make test`                       | Run the backend test suite                                                        |
+| `make check`                      | Everything CI runs: lint, typecheck, test, docs-link check, dashboard-drift check |
+| `make psql` / `make redis-cli`    | Database shells                                                                   |
+| `make nuke`                       | Delete all volumes (asks for confirmation)                                        |
 
 Targets marked `[planned]` in `make help` belong to components that are specified but not yet
 built; they print the relevant spec section instead of failing.
 
 ### Ports
 
-| Service | Host port | Note |
-|---|---|---|
-| Frontend | 3000 | |
-| API | 8000 | REST + WebSocket |
-| Grafana | 3001 | Remapped to avoid the frontend |
-| PostgreSQL | 5432 | |
-| Redis | 6379 | |
-| Qdrant | 6333 / 6334 | REST / gRPC |
-| **MLflow** | **5001** | Container port is 5000; **host 5000 is AirPlay Receiver on macOS** |
-| Prometheus | 9090 | |
-| cAdvisor | 8081 | Remapped to avoid dev servers on 8080 |
-| Ollama | 11434 | Host-native process |
+| Service    | Host port   | Note                                                               |
+| ---------- | ----------- | ------------------------------------------------------------------ |
+| Frontend   | 3000        |                                                                    |
+| API        | 8000        | REST + WebSocket                                                   |
+| Grafana    | 3001        | Remapped to avoid the frontend                                     |
+| PostgreSQL | 5432        |                                                                    |
+| Redis      | 6379        |                                                                    |
+| Qdrant     | 6333 / 6334 | REST / gRPC                                                        |
+| **MLflow** | **5001**    | Container port is 5000; **host 5000 is AirPlay Receiver on macOS** |
+| Prometheus | 9090        |                                                                    |
+| cAdvisor   | 8081        | Remapped to avoid dev servers on 8080                              |
+| Ollama     | 11434       | Host-native process                                                |
 
 ---
 
@@ -315,13 +315,13 @@ autonomous-ai-platform/
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
+| Document                                         | Contents                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Service topology, runtime execution model, PostgreSQL schema + DDL, Redis keyspace, Qdrant collections, REST contract, **the full WebSocket protocol**, **sandbox isolation spec**, model routing, observability, security model, configuration reference, failure/recovery matrix |
-| [`docs/AGENTS.md`](./docs/AGENTS.md) | Agent roster and rationale, **complete state schema with reducers**, graph topology, routing predicate tables, the three reflection loops, **termination proof**, per-agent prompts and tool bindings, HITL gates, checkpointing, testing strategy, benchmark suites |
-| [`docs/MLOPS.md`](./docs/MLOPS.md) | MLflow deployment, **the `metrics.json` JSON Schema**, run hierarchy, tag taxonomy, metric vocabulary, artifact structure, model registry and promotion, retention and GC, reproducibility contract |
-| [`docs/FRONTEND.md`](./docs/FRONTEND.md) | The dashboard's remaining implementation plan — project structure, state management, the `useRunStream` hook contract, the four-pane live run view, type generation, build order |
-| [`notes.md`](./notes.md) | Architecture Decision Records with tradeoffs, rejected alternatives, catalogued defects and their fixes, risk register, phase-by-phase delivery history |
+| [`docs/AGENTS.md`](./docs/AGENTS.md)             | Agent roster and rationale, **complete state schema with reducers**, graph topology, routing predicate tables, the three reflection loops, **termination proof**, per-agent prompts and tool bindings, HITL gates, checkpointing, testing strategy, benchmark suites               |
+| [`docs/MLOPS.md`](./docs/MLOPS.md)               | MLflow deployment, **the `metrics.json` JSON Schema**, run hierarchy, tag taxonomy, metric vocabulary, artifact structure, model registry and promotion, retention and GC, reproducibility contract                                                                                |
+| [`docs/FRONTEND.md`](./docs/FRONTEND.md)         | The dashboard's remaining implementation plan — project structure, state management, the `useRunStream` hook contract, the four-pane live run view, type generation, build order                                                                                                   |
+| [`notes.md`](./notes.md)                         | Architecture Decision Records with tradeoffs, rejected alternatives, catalogued defects and their fixes, risk register, phase-by-phase delivery history                                                                                                                            |
 
 ---
 
@@ -365,17 +365,17 @@ MLFLOW_PUBLIC_URL=http://localhost:5001    # from your browser
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `DATABASE_URL uses the 'postgresql://' scheme…` at startup | A sync DSN reaching the async engine | Use `postgresql+asyncpg://`, or unset `DATABASE_URL` and let `POSTGRES_*` compose it |
-| LLM calls fail with a DNS error under `make dev` | `OLLAMA_BASE_URL` set to `host.docker.internal`, which does not resolve from the host | Keep the default `http://localhost:11434` for native runs |
-| MLflow UI 404s or shows an unrelated page | Hitting host port 5000, which macOS gives to AirPlay Receiver | Use **5001**, or disable AirPlay Receiver in System Settings → General → AirDrop & Handoff |
-| `model not found` from Ollama | Model not pulled | `make pull-models` (or `pull-models-small`) |
-| Ollama is very slow | Running containerised on macOS, so no Metal | Install Ollama natively; this is why it is not in compose |
-| Sandbox: `ImageNotFound` | Sandbox images not built | `make build-sandbox` — the exec/train images are still on the roadmap; see [`ARCHITECTURE.md §21`](./docs/ARCHITECTURE.md#21-implementation-status) |
-| Sandbox exits 137 immediately | OOM-killed | Raise `SANDBOX_TRAIN_MEMORY`, or the agent needs a smaller batch size |
-| WebSocket keeps reconnecting | Ticket expired (60 s) or connection quota hit | Re-acquire a ticket; follow the backoff algorithm in [`ARCHITECTURE.md §9.8`](./docs/ARCHITECTURE.md#98-client-reconnection-algorithm-normative) |
-| Postgres connection refused right after `make up` | `make up` returns once containers are *started*; `make migrate` can still beat the first health check | `make ps` until postgres is `healthy`, then `make migrate` |
+| Symptom                                                    | Cause                                                                                                 | Fix                                                                                                                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL uses the 'postgresql://' scheme…` at startup | A sync DSN reaching the async engine                                                                  | Use `postgresql+asyncpg://`, or unset `DATABASE_URL` and let `POSTGRES_*` compose it                                                                |
+| LLM calls fail with a DNS error under `make dev`           | `OLLAMA_BASE_URL` set to `host.docker.internal`, which does not resolve from the host                 | Keep the default `http://localhost:11434` for native runs                                                                                           |
+| MLflow UI 404s or shows an unrelated page                  | Hitting host port 5000, which macOS gives to AirPlay Receiver                                         | Use **5001**, or disable AirPlay Receiver in System Settings → General → AirDrop & Handoff                                                          |
+| `model not found` from Ollama                              | Model not pulled                                                                                      | `make pull-models` (or `pull-models-small`)                                                                                                         |
+| Ollama is very slow                                        | Running containerised on macOS, so no Metal                                                           | Install Ollama natively; this is why it is not in compose                                                                                           |
+| Sandbox: `ImageNotFound`                                   | Sandbox images not built                                                                              | `make build-sandbox` — the exec/train images are still on the roadmap; see [`ARCHITECTURE.md §21`](./docs/ARCHITECTURE.md#21-implementation-status) |
+| Sandbox exits 137 immediately                              | OOM-killed                                                                                            | Raise `SANDBOX_TRAIN_MEMORY`, or the agent needs a smaller batch size                                                                               |
+| WebSocket keeps reconnecting                               | Ticket expired (60 s) or connection quota hit                                                         | Re-acquire a ticket; follow the backoff algorithm in [`ARCHITECTURE.md §9.8`](./docs/ARCHITECTURE.md#98-client-reconnection-algorithm-normative)    |
+| Postgres connection refused right after `make up`          | `make up` returns once containers are _started_; `make migrate` can still beat the first health check | `make ps` until postgres is `healthy`, then `make migrate`                                                                                          |
 
 `make doctor` checks most of these automatically. A full defect history with root causes and
 fixes lives in [`notes.md`'s known-defects catalogue](./notes.md#known-defects-in-the-current-tree).
@@ -414,3 +414,4 @@ MIT.
 ## Author
 
 **Jerlshin JG** — <jerlshin.official008@gmail.com>
+**Afnan Sheik Javeed** - <asjved.8385@gmail.com>

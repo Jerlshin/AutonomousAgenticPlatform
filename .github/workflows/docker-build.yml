@@ -183,3 +183,45 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose --env-file .env -f infrastructure/docker-compose.yml down -v
+
+
+  # ---------------------------------------------------------------------------
+  #  Notification on completion (Success or Failure)
+  # ---------------------------------------------------------------------------
+  notify-docker-status:
+    name: Notify Docker Status
+    runs-on: ubuntu-latest
+    needs: [build, compose-smoke]
+    if: always()
+    steps:
+      - name: Determine Status
+        id: status
+        run: |
+          RESULTS="${{ needs.build.result }} ${{ needs.compose-smoke.result }}"
+          if echo "$RESULTS" | grep -qE "failure|cancelled"; then
+            echo "state=FAILED" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=SUCCESS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send Notification Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "[${{ steps.status.outputs.state }}] Docker Build & Smoke: ${{ github.repository }}"
+          to: asjved.8385@gmail.com
+          from: GitHub Actions Alert
+          body: |
+            Docker Build & Compose Smoke finished with status: ${{ steps.status.outputs.state }}
+
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Run Details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Job Breakdown:
+            - Build Images: ${{ needs.build.result }}
+            - Compose Smoke: ${{ needs.compose-smoke.result }}
